@@ -1,0 +1,115 @@
+#first job
+
+#Step from fy
+
+#worklog for RNAseq
+gffread Gmax_508_Wm82.a4.v1.gene.gff3 -T -o Gmax_508_Wm82.a4.v1.gene.gtf
+hisat2_extract_exons.py Gmax_508_Wm82.a4.v1.gene.gtf > Gmax_508_Wm82.a4.v1.exon.txt
+hisat2_extract_splice_sites.py Gmax_508_Wm82.a4.v1.gene.gtf > Gmax_508_Wm82.a4.v1.ss.txt
+
+
+hisat2_extract_exons.py ~/GWAS_Glycine/Glycine_max_genome/ncbi-download/Huaxia3_v1_GCA_014282145.1/genomic.gtf  > Huaxia3_v1_GCA_014282145.1.exon.txt
+hisat2_extract_splice_sites.py ~/GWAS_Glycine/Glycine_max_genome/ncbi-download/Huaxia3_v1_GCA_014282145.1/genomic.gtf  > Huaxia3_v1_GCA_014282145.1.ss.txt
+
+# mine
+gffread Gmax_508_Wm82.a4.v1.gene.gff3 -T -o Gmax_508_Wm82.a4.v1.gene.gtf
+hisat2_extract_exons.py Gmax_508_Wm82.a4.v1.gene.gtf > Gmax_508_Wm82.a4.v1.exon.txt
+hisat2_extract_splice_sites.py Gmax_508_Wm82.a4.v1.gene.gtf > Gmax_508_Wm82.a4.v1.ss.txt
+
+
+
+
+# build index
+
+
+hisat2-build --exon max_508_Wm82.a4.v1.exon.txt --ss Gmax_508_Wm82.a4.v1.ss.txt -p 80  Gmax_508_v4.0.fasta Gmax_508_v4.0.hisat2
+hisat2-build --exon Huaxia3_v1_GCA_014282145.1.exon.txt --ss Huaxia3_v1_GCA_014282145.1.ss.txt -p 80  GCA_014282145.1_WHFS_GmHX3_1.0_genomic.fa  WHFS_GmHX3.hisat2
+
+# mine
+hisat2-build --exon Gmax_508_Wm82.a4.v1.exon.txt --ss Gmax_508_Wm82.a4.v1.ss.txt -p 80 Gmax_508_v4.0.fa Gmax_508_v4.0.hisat2_index
+
+
+# alignment
+nohup hisat2 -x ../../../index/Gmax_508_v4.0.hisat2 --dta -1 ../raw/ef1_5_1.fq.gz -2 ../raw/ef1_5_2.fq.gz -S ef1_5.sam -p 80 > nohup_ef1_5 &
+nohup hisat2 -x ../../../index/Gmax_508_v4.0.hisat2 --dta -1 ../raw/ef1_6_1.fq.gz -2 ../raw/ef1_6_2.fq.gz -S ef1_6.sam -p 80 > nohup_ef1_6 &
+nohup hisat2 -x ../../../index/Gmax_508_v4.0.hisat2 --dta -1 ../raw/ef1_7_1.fq.gz -2 ../raw/ef1_7_2.fq.gz -S ef1_7.sam -p 80 > nohup_ef1_7 &  
+
+
+# mine
+nohup hisat2 -x /mnt/nfs2/stu_fy/hms/Data/index/Gmax_508_v4.0.hisat2_index --dta -1 /mnt/nfs2/stu_fy/hms/RNA-seq/HC22_
+1_clean_R1.fq.gz  -2 /mnt/nfs2/stu_fy/hms/RNA-seq/HC22_1_clean_R2.fq.gz -S HC22_1.sam -p 80 > nohup_HC22_1 &
+nohup hisat2 -x /mnt/nfs2/stu_fy/hms/Data/index/Gmax_508_v4.0.hisat2_index --dta -1 /mnt/nfs2/stu_fy/hms/RNA-seq/HC22_
+2_clean_R1.fq.gz  -2 /mnt/nfs2/stu_fy/hms/RNA-seq/HC22_2_clean_R2.fq.gz -S HC22_2.sam -p 80 > nohup_HC22_2 &
+nohup hisat2 -x /mnt/nfs2/stu_fy/hms/Data/index/Gmax_508_v4.0.hisat2_index --dta -1 /mnt/nfs2/stu_fy/hms/RNA-seq/HC22_3_clean_R1.fq.gz  -2 /mnt/nfs2/stu_fy/hms/RNA-seq/HC22_3_clean_R2.fq.gz -S HC22_3.sam -p 80 > nohup_HC22_3 &
+nohup hisat2 -x /mnt/nfs2/stu_fy/hms/Data/index/Gmax_508_v4.0.hisat2_index --dta -1 /mnt/nfs2/stu_fy/hms/RNA-seq/HH43_1_clean_R1.fq.gz -2 /mnt/nfs2/stu_fy/hms/RNA-seq/HH43_1_clean_R2.fq.gz -S HH43_1.sam -p 80 > nohup_HH43_1 &
+nohup hisat2 -x /mnt/nfs2/stu_fy/hms/Data/index/Gmax_508_v4.0.hisat2_index --dta -1 /mnt/nfs2/stu_fy/hms/RNA-seq/HH43_
+2_clean_R1.fq.gz  -2 /mnt/nfs2/stu_fy/hms/RNA-seq/HH43_2_clean_R2.fq.gz -S HH43_2.sam -p 80 > nohup_HH43_2 &
+nohup hisat2 -x /mnt/nfs2/stu_fy/hms/Data/index/Gmax_508_v4.0.hisat2_index --dta -1 /mnt/nfs2/stu_fy/hms/RNA-seq/HH43_
+3_clean_R1.fq.gz  -2 /mnt/nfs2/stu_fy/hms/RNA-seq/HH43_3_clean_R2.fq.gz -S HH43_3.sam -p 80 > nohup_HH43_3 &
+nohup hisat2 -x /mnt/nfs2/stu_fy/hms/Data/index/Gmax_508_v4.0.hisat2_index --dta -1 /mnt/nfs2/stu_fy/hms/RNA-seq/HX3_1_clean_R1.fq.gz  -2 /mnt/nfs2/stu_fy/hms/RNA-seq/HX3_1_clean_R2.fq.gz -S HX3_1.sam -p 80 > nohup_HX3_1 &
+nohup hisat2 -x /mnt/nfs2/stu_fy/hms/Data/index/Gmax_508_v4.0.hisat2_index --dta -1 /mnt/nfs2/stu_fy/hms/RNA-seq/HX3_2_clean_R1.fq.gz -2 /mnt/nfs2/stu_fy/hms/RNA-seq/HX3_2_clean_R2.fq.gz -S HX3_2.sam -p 80 > nohup_HX3_2 &
+nohup hisat2 -x /mnt/nfs2/stu_fy/hms/Data/index/Gmax_508_v4.0.hisat2_index --dta -1 /mnt/nfs2/stu_fy/hms/RNA-seq/HX3_3_clean_R1.fq.gz -2 /mnt/nfs2/stu_fy/hms/RNA-seq/HX3_3_clean_R2.fq.gz -S HX3_3.sam -p 80 > nohup_HX3_3 &
+nohup hisat2 -x /mnt/nfs2/stu_fy/hms/Data/index/Gmax_508_v
+4.0.hisat2_index --dta -1 /mnt/nfs2/stu_fy/hms/RNA-seq/Wm82_1_clean_R1.fq.gz  -2 /mnt/nfs2/stu_fy/hms/RNA-seq/Wm82_1_clean_R2.fq.gz -S Wm82_1.sam -p 80 > nohup_Wm82_1 &
+nohup hisat2 -x /mnt/nfs2/stu_fy/hms/Data/index/Gmax_508_v4.0.hisat2_index --dta -1 /mnt/nfs2/stu_fy/hms/RNA-seq/Wm82_2_clean_R1.fq.gz -2 /mnt/nfs2/stu_fy/hms/RNA-seq/Wm82_2_clean_R2.fq.gz -S Wm82_2.sam -p 80 > nohup_Wm82_2
+nohup hisat2 -x /mnt/nfs2/stu_fy/hms/Data/index/Gmax_508_v4.0.hisat2_index --dta -1 /mnt/nfs2/stu_fy/hms/RNA-seq/Wm82_3_clean_R1.fq.gz -2 /mnt/nfs2/stu_fy/hms/RNA-seq/Wm82_3_clean_R2.fq.gz -S Wm82_3.sam -p 80 > nohup_Wm82_3
+nohup hisat2 -x /mnt/nfs2/stu_fy/hms/Data/index/Gmax_508_v4.0.hisat2_index --dta -1 /mnt/nfs2/stu_fy/hms/RNA-seq/ZH13_1_clean_R1.fq.gz -2 /mnt/nfs2/stu_fy/hms/RNA-seq/ZH13_1_clean_R2.fq.gz -S ZH13_1.sam -p 80 > nohup_ZH13_1
+nohup hisat2 -x /mnt/nfs2/stu_fy/hms/Data/index/Gmax_508_v4.0.hisat2_index --dta -1 /mnt/nfs2/stu_fy/hms/RNA-seq/ZH13_2_clean_R1.fq.gz -2 /mnt/nfs2/stu_fy/hms/RNA-seq/ZH13_2_clean_R2.fq.gz -S ZH13_2.sam -p 80 > nohup_ZH13_2
+nohup hisat2 -x /mnt/nfs2/stu_fy/hms/Data/index/Gmax_508_v4.0.hisat2_index --dta -1 /mnt/nfs2/stu_fy/hms/RNA-seq/ZH13_3_clean_R1.fq.gz -2 /mnt/nfs2/stu_fy/hms/RNA-seq/ZH13_3_clean_R2.fq.gz -S ZH13_3.sam -p 80 > nohup_ZH13_3
+
+
+
+
+# ef1_7 mapping ratio   75.78% overall alignment rate  9984090 (40.80%) aligned concordantly exactly 1 time  舍弃该重复
+# HX3_4                         87.93% overall alignment rate   16701365 (75.71%) aligned concordantly exactly 1 time 舍弃该重复
+
+
+
+
+nohup hisat2 -x ../../../index/Gmax_508_v4.0.hisat2 --dta -1 ../raw/HX3_4_1.fq.gz -2 ../raw/HX3_4_2.fq.gz -S HX3_4.sam -p 80 > nohup_HX3_4 &
+nohup hisat2 -x ../../../index/Gmax_508_v4.0.hisat2 --dta -1 ../raw/HX3_5_1.fq.gz -2 ../raw/HX3_5_2.fq.gz -S HX3_5.sam -p 80 > nohup_HX3_5 &
+nohup hisat2 -x ../../../index/Gmax_508_v4.0.hisat2 --dta -1 ../raw/HX3_7_1.fq.gz -2 ../raw/HX3_7_2.fq.gz -S HX3_7.sam -p 80 > nohup_HX3_7 &
+
+
+nohup samtools sort -@ 100 ef1_5.sam -o ef1_5.sort.bam  &
+nohup samtools sort -@ 100 ef1_6.sam -o ef1_6.sort.bam  &
+nohup samtools sort -@ 100 ef1_7.sam -o ef1_7.sort.bam  &
+nohup samtools sort -@ 100 HX3_4.sam -o HX3_4.sort.bam  &
+nohup samtools sort -@ 100 HX3_5.sam -o HX3_5.sort.bam  &
+nohup samtools sort -@ 100 HX3_7.sam -o HX3_7.sort.bam  &
+#
+# (-e -G 必须一起使用, 仅计算注释基因的FPKM） -A 输出gene FPKM  -o 输出transcript FPKM  -C 可输出full coverage transcript 
+
+# mine
+nohup samtools sort -@ 100 HC22_1.sam -o HC22_1.sort.bam &
+nohup samtools sort -@ 100 HC22_2.sam -o HC22_2.sort.bam &
+nohup samtools sort -@ 100 HC22_3.sam -o HC22_3.sort.bam &
+nohup samtools sort -@ 100 HH43_1.sam -o HH43_1.sort.bam &
+nohup samtools sort -@ 100 HH43_2.sam -o HH43_2.sort.bam &
+nohup samtools sort -@ 100 HH43_3.sam -o HH43_3.sort.bam &
+nohup samtools sort -@ 100 HX3_1.sam -o HX3_1.sort.bam &
+nohup samtools sort -@ 100 HX3_2.sam -o HX3_2.sort.bam &
+nohup samtools sort -@ 100 HX3_3.sam -o HX3_3.sort.bam &
+nohup samtools sort -@ 100 Wm82_1.sam -o Wm82_1.sort.bam &
+nohup samtools sort -@ 100 Wm82_2.sam -o Wm82_2.sort.bam &
+nohup samtools sort -@ 100 Wm82_3.sam -o Wm82_3.sort.bam &
+nohup samtools sort -@ 100 ZH13_1.sam -o ZH13_1.sort.bam &
+nohup samtools sort -@ 100 ZH13_2.sam -o ZH13_2.sort.bam &
+nohup samtools sort -@ 100 ZH13_3.sam -o ZH13_3.sort.bam &
+##
+
+nohup ~/software/stringtie/stringtie  ef1_5.sort.bam -p 80  -A ef1_5.gene.abundance   -e -G ../../../index/Gmax_508_Wm82.a4.v1.gene.gtf   -B -o ./ef1_5.stringtie2.out.gtf &
+nohup ~/software/stringtie/stringtie  ef1_6.sort.bam -p 80  -A ef1_6.gene.abundance   -e -G ../../../index/Gmax_508_Wm82.a4.v1.gene.gtf   -B -o ./ef1_6.stringtie2.out.gtf &
+nohup ~/software/stringtie/stringtie  ef1_7.sort.bam -p 80  -A ef1_7.gene.abundance   -e -G ../../../index/Gmax_508_Wm82.a4.v1.gene.gtf   -B -o ./ef1_7.stringtie2.out.gtf &
+
+
+nohup ~/software/stringtie/stringtie  HX3_4.sort.bam -p 80  -A HX3_4.gene.abundance   -e -G ../../../index/Gmax_508_Wm82.a4.v1.gene.gtf   -B -o ./HX3_4.stringtie2.out.gtf &
+nohup ~/software/stringtie/stringtie  HX3_5.sort.bam -p 80  -A HX3_5.gene.abundance   -e -G ../../../index/Gmax_508_Wm82.a4.v1.gene.gtf   -B -o ./HX3_5.stringtie2.out.gtf &
+nohup ~/software/stringtie/stringtie  HX3_7.sort.bam -p 80  -A HX3_7.gene.abundance   -e -G ../../../index/Gmax_508_Wm82.a4.v1.gene.gtf   -B -o ./HX3_7.stringtie2.out.gtf &
+
+# mine
+for i in HC22_1 HC22_2 HC22_3 HH43_1 HH43_2 HH43_3 HX3_1 HX3_2 HX3_3 Wm82_1 Wm82_2 Wm82_3 ZH13_1 ZH13_2 ZH13_3; do
+> nohup stringtie ${i}.sort.bam -p 80 -A ${i}.gene.abundance -e -G Gmax_508_Wm82.a4.v1.gene.gtf -B -o ./out.gtf/${i}.out.gtf > ${i}.outgtflog 2>&1 &
+
+
+
