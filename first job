@@ -108,9 +108,7 @@ done
 awk 'NR>1 {print $9}' ./gene.abundance/ZH13_3.gene.abundance | sort -n | less -SN 
 
 
-
 #统计 readscount   (-T threads   -p pair-end )  
-  
 ~/software/subread-2.0.3-Linux-x86_64/bin/featureCounts -T 60  -p -g gene_id -a ../../../../index/Gmax_508_Wm82.a4.v1.gene.gtf  -o HX3_4_5_7_ef1_5_6_7.readscount    ../HX3_4.sam ../HX3_5.sam ../HX3_7.sam ../ef1_5.sam ../ef1_6.sam  ../ef1_7.sam
 
 # mine
@@ -307,7 +305,7 @@ for (csv_file in csv_files) {
     ressig <- res[which(res$padj < 0.05 & abs(res$log2FoldChange) > 1), ]
     ressig[ressig$log2FoldChange > 0, 'up_down'] <- 'up'  #表达量显著上调的基因
     ressig[ressig$log2FoldChange < 0, 'up_down'] <- 'down'  #表达量显著下调的基因
-# 输出处理后的结果到.xls文件(分隔符为tab，列名保存，行号保存，无需给文本加引号，NA值用空字符代替)
+#输出处理后的结果到.xls文件(分隔符为tab，列名保存，行号保存，无需给文本加引号，NA值用空字符代替)
     write.table(ressig, xls_file, sep = "\t", col.names = TRUE, row.names = FALSE, quote = FALSE, na = "") }
 
 # mine
