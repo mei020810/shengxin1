@@ -12,15 +12,13 @@ hisat2_extract_exons.py ~/GWAS_Glycine/Glycine_max_genome/ncbi-download/Huaxia3_
 hisat2_extract_splice_sites.py ~/GWAS_Glycine/Glycine_max_genome/ncbi-download/Huaxia3_v1_GCA_014282145.1/genomic.gtf  > Huaxia3_v1_GCA_014282145.1.ss.txt
 
 # mine
+conda activate study_rna
 gffread Gmax_508_Wm82.a4.v1.gene.gff3 -T -o Gmax_508_Wm82.a4.v1.gene.gtf
 hisat2_extract_exons.py Gmax_508_Wm82.a4.v1.gene.gtf > Gmax_508_Wm82.a4.v1.exon.txt
 hisat2_extract_splice_sites.py Gmax_508_Wm82.a4.v1.gene.gtf > Gmax_508_Wm82.a4.v1.ss.txt
 
 
-
-
-# build index
-
+#build index
 
 hisat2-build --exon max_508_Wm82.a4.v1.exon.txt --ss Gmax_508_Wm82.a4.v1.ss.txt -p 80  Gmax_508_v4.0.fasta Gmax_508_v4.0.hisat2
 hisat2-build --exon Huaxia3_v1_GCA_014282145.1.exon.txt --ss Huaxia3_v1_GCA_014282145.1.ss.txt -p 80  GCA_014282145.1_WHFS_GmHX3_1.0_genomic.fa  WHFS_GmHX3.hisat2
@@ -29,7 +27,7 @@ hisat2-build --exon Huaxia3_v1_GCA_014282145.1.exon.txt --ss Huaxia3_v1_GCA_0142
 hisat2-build --exon Gmax_508_Wm82.a4.v1.exon.txt --ss Gmax_508_Wm82.a4.v1.ss.txt -p 80 Gmax_508_v4.0.fa Gmax_508_v4.0.hisat2_index
 
 
-# alignment
+#alignment
 nohup hisat2 -x ../../../index/Gmax_508_v4.0.hisat2 --dta -1 ../raw/ef1_5_1.fq.gz -2 ../raw/ef1_5_2.fq.gz -S ef1_5.sam -p 80 > nohup_ef1_5 &
 nohup hisat2 -x ../../../index/Gmax_508_v4.0.hisat2 --dta -1 ../raw/ef1_6_1.fq.gz -2 ../raw/ef1_6_2.fq.gz -S ef1_6.sam -p 80 > nohup_ef1_6 &
 nohup hisat2 -x ../../../index/Gmax_508_v4.0.hisat2 --dta -1 ../raw/ef1_7_1.fq.gz -2 ../raw/ef1_7_2.fq.gz -S ef1_7.sam -p 80 > nohup_ef1_7 &  
@@ -59,11 +57,8 @@ nohup hisat2 -x /mnt/nfs2/stu_fy/hms/Data/index/Gmax_508_v4.0.hisat2_index --dta
 
 
 
-
 # ef1_7 mapping ratio   75.78% overall alignment rate  9984090 (40.80%) aligned concordantly exactly 1 time  舍弃该重复
 # HX3_4                         87.93% overall alignment rate   16701365 (75.71%) aligned concordantly exactly 1 time 舍弃该重复
-
-
 
 
 nohup hisat2 -x ../../../index/Gmax_508_v4.0.hisat2 --dta -1 ../raw/HX3_4_1.fq.gz -2 ../raw/HX3_4_2.fq.gz -S HX3_4.sam -p 80 > nohup_HX3_4 &
@@ -78,7 +73,7 @@ nohup samtools sort -@ 100 HX3_4.sam -o HX3_4.sort.bam  &
 nohup samtools sort -@ 100 HX3_5.sam -o HX3_5.sort.bam  &
 nohup samtools sort -@ 100 HX3_7.sam -o HX3_7.sort.bam  &
 #
-# (-e -G 必须一起使用, 仅计算注释基因的FPKM） -A 输出gene FPKM  -o 输出transcript FPKM  -C 可输出full coverage transcript 
+#(-e -G 必须一起使用, 仅计算注释基因的FPKM） -A 输出gene FPKM  -o 输出transcript FPKM  -C 可输出full coverage transcript 
 
 # mine
 nohup samtools sort -@ 100 HC22_1.sam -o HC22_1.sort.bam &
@@ -101,15 +96,232 @@ nohup samtools sort -@ 100 ZH13_3.sam -o ZH13_3.sort.bam &
 nohup ~/software/stringtie/stringtie  ef1_5.sort.bam -p 80  -A ef1_5.gene.abundance   -e -G ../../../index/Gmax_508_Wm82.a4.v1.gene.gtf   -B -o ./ef1_5.stringtie2.out.gtf &
 nohup ~/software/stringtie/stringtie  ef1_6.sort.bam -p 80  -A ef1_6.gene.abundance   -e -G ../../../index/Gmax_508_Wm82.a4.v1.gene.gtf   -B -o ./ef1_6.stringtie2.out.gtf &
 nohup ~/software/stringtie/stringtie  ef1_7.sort.bam -p 80  -A ef1_7.gene.abundance   -e -G ../../../index/Gmax_508_Wm82.a4.v1.gene.gtf   -B -o ./ef1_7.stringtie2.out.gtf &
-
-
 nohup ~/software/stringtie/stringtie  HX3_4.sort.bam -p 80  -A HX3_4.gene.abundance   -e -G ../../../index/Gmax_508_Wm82.a4.v1.gene.gtf   -B -o ./HX3_4.stringtie2.out.gtf &
 nohup ~/software/stringtie/stringtie  HX3_5.sort.bam -p 80  -A HX3_5.gene.abundance   -e -G ../../../index/Gmax_508_Wm82.a4.v1.gene.gtf   -B -o ./HX3_5.stringtie2.out.gtf &
 nohup ~/software/stringtie/stringtie  HX3_7.sort.bam -p 80  -A HX3_7.gene.abundance   -e -G ../../../index/Gmax_508_Wm82.a4.v1.gene.gtf   -B -o ./HX3_7.stringtie2.out.gtf &
 
 # mine
 for i in HC22_1 HC22_2 HC22_3 HH43_1 HH43_2 HH43_3 HX3_1 HX3_2 HX3_3 Wm82_1 Wm82_2 Wm82_3 ZH13_1 ZH13_2 ZH13_3; do
-> nohup stringtie ${i}.sort.bam -p 80 -A ${i}.gene.abundance -e -G Gmax_508_Wm82.a4.v1.gene.gtf -B -o ./out.gtf/${i}.out.gtf > ${i}.outgtflog 2>&1 &
+> nohup stringtie ${i}.sort.bam -p 80 -A ${i}.gene.abundance -e -G Gmax_508_Wm82.a4.v1.gene.gtf -B -o ./out.gtf/${i}.out.gtf > ${i}.outgtflog 2>&1 & 
+done
+#把TPM列排序并用less查看(mine)
+awk 'NR>1 {print $9}' ./gene.abundance/ZH13_3.gene.abundance | sort -n | less -SN 
 
 
 
+#统计 readscount   (-T threads   -p pair-end )  
+  
+~/software/subread-2.0.3-Linux-x86_64/bin/featureCounts -T 60  -p -g gene_id -a ../../../../index/Gmax_508_Wm82.a4.v1.gene.gtf  -o HX3_4_5_7_ef1_5_6_7.readscount    ../HX3_4.sam ../HX3_5.sam ../HX3_7.sam ../ef1_5.sam ../ef1_6.sam  ../ef1_7.sam
+
+# mine
+# 得到基因的readscount
+featureCounts  -T 60 -p -g gene_id -a ./Gmax_508_Wm82.a4.v1.gene.gtf -o HC22_1_2_3_Wm82_1_2_3.readscount ./sam/HC22_1.sam ./sam/HC22_2.sam ./sam/HC22_3.sam ./sam/Wm82_1.sam ./sam/Wm82_2.sam ./sam/Wm82_3.sam
+for i in HH43 HX3 ZH13; do
+> nohup featureCounts  -T 20 -p -g gene_id -a ./Gmax_508_Wm82.a4.v1.gene.gtf -o ${i}_1_2_3_Wm82_1_2_3.readscount ./sam/${i}_1.sam ./sam/${i}_2.sam ./sam/${i}_3.sam ./sam/Wm82_1.sam ./sam/Wm82_2.sam ./sam/Wm82_3.sam > ${i}.readscount.log 2>&1 &
+>echo "start: $i (PID: $!)"
+>sleep 10
+> done
+# 得到转录本readscount
+for i in HC22 HH43 HX3 ZH13; do
+> nohup featureCounts  -T 20 -p -g transcript_id -a ./Gmax_508_Wm82.a4.v1.gene.gtf -o ${i}_1_2_3_Wm82_1_2_3.transcript_count ./sam/${i}_1.sam ./sam/${i}_2.sam ./sam/${i}_3.sam ./sam/Wm82_1.sam ./sam/Wm82_2.sam ./sam/Wm82_3.sam > ${i}.transcript_count.log 2>&1 &
+>echo "start: $i (PID: $!)"
+>sleep 10
+> done
+
+
+#得到gene 和 transcript reads count 矩阵  
+gene_count_matrix.csv  
+transcript_count_matrix.csv
+
+可使用DESeq2 或edgeR 计算 DEG
+
+
+使用DESeq2
+#基因水平差异表达分析
+
+library("DESeq2")
+setwd("F:/")
+counts<-read.table("F:/readscount.txt",header = T, row.names = 1)    # or  counts<-read.csv("F:/gene_count_matrix.csv",header = T, row.names = 1)
+mycounts<-counts[,c(2,3,4,5)]  (#舍弃其中两个样本）
+condition <- factor(c(rep("ef1", 2),rep("HX3", 2)), levels = c("ef1","HX3"))
+colData <- data.frame(row.names = colnames(mycounts), condition)
+dds <- DESeqDataSetFromMatrix(mycounts, colData, design = ~condition)
+dds <- DESeq(dds)
+res = results(dds, contrast=c("condition", "ef1","HX3"))
+res = res[order(res$padj),]
+summary(res)
+write.csv(res, file="ef1_5_6_vs_HX3_5_7_results.csv") ### treat 放在control 前面
+
+# mine
+library(DESeq2) 
+getwd()  #查看当前工作目录
+setwd("/mnt/nfs2/stu_fy/hms/Data")  #设置新的工作目录
+counts<-read.table("/mnt/nfs2/stu_fy/hms/Data/HC22_1_2_3_Wm82_1_2_3.readscount",header = T, row.names = 1)  #读取数据
+colnames(counts)   #确认列名
+colnames(counts) <- gsub("^\\.sam\\.|\\.sam$", "", colnames(counts))   # 清理列名：去掉".sam."和".sam"
+counts <- counts[, 6:11]   #只保留计数列去除前五列注释信息，第6-11列是样本计数数据
+colnames(counts)    
+colnames(counts) <- c("HC22_1", "HC22_2", "HC22_3", "Wm82_1", "Wm82_2", "Wm82_3")   #列名仍然有误，把列名直接改成HC22_1、HC22_2、HC22_3、Wm82_1、Wm82_2、Wm82_3
+colnames(counts)   #确认列名修改成功
+ head(counts)  #快速查看数据前几行
+condition <- factor(c(rep("HC22", 3),rep("Wm82", 3)), levels = c("Wm82","HC22"))  #levels中第一个位置定义对照组
+colData <- data.frame(row.names = colnames(counts), condition)  #创建样本信息
+dds <- DESeqDataSetFromMatrix(counts, colData, design = ~condition)  #创建DESeq22数据集
+dds <- DESeq(dds)  #进行分析
+res = results(dds, contrast=c("condition", "HC22","Wm82"))  #提取结果，按p值排序，HC22相对于Wm82(对照组）的变化(优先级比levels更高）
+res = res[order(res$padj),]  #提取结果，按p值排序
+summary(res)  #查看摘要
+write.csv(res, file="HC22_1_2_3_vs_Wm82_1_2_3_results.csv")  #保存结果
+
+# 利用脚本循环
+vim run_generesults.sh
+
+#!/bin/bash
+# 品种列表
+varieties=("HH43" "HX3" "ZH13")
+# 温和的并发控制（最多同时跑2个）
+max_jobs=2
+current_jobs=0
+
+# 循环处理每个品种
+for variety in "${varieties[@]}"; do
+            echo "正在处理品种: $variety"
+
+# 如果当前任务数达到上限，等待
+    while [ $current_jobs -ge $max_jobs ]; do
+            wait -n
+            current_jobs=$((current_jobs - 1))
+    done
+
+            Rscript -e "
+            library(DESeq2)
+
+            # 读取数据
+            counts <- read.table('/mnt/nfs2/stu_fy/hms/Data/${variety}_1_2_3_Wm82_1_2_3.readscount', header = TRUE, row.names = 1)
+            # 清理列名
+            counts <- counts[, 6:11]
+            colnames(counts) <- c('${variety}_1', '${variety}_2', '${variety}_3','Wm82_1', 'Wm82_2', 'Wm82_3')
+            # 创建实验设计
+            condition <- factor(c(rep('${variety}', 3), rep('Wm82', 3)),levels = c('Wm82', '${variety}'))
+            colData <- data.frame(row.names = colnames(counts), condition)
+            # DESeq2分析
+            dds <- DESeqDataSetFromMatrix(counts, colData, design = ~condition)
+            dds <- DESeq(dds)
+            res <- results(dds, contrast = c('condition', '${variety}', 'Wm82'))
+            res <- res[order(res\$padj), ]
+            # 保存结果
+            write.csv(res, file = '${variety}_1_2_3_vs_Wm82_1_2_3_results.csv')
+            cat('${variety} 分析完成！\\n')
+            " &
+ current_jobs=$((current_jobs + 1))
+            sleep 5
+done
+wait #等待所有任务完成
+echo "所有品种gene差异分析完成!"
+chmod +x run_generesults.sh
+./run_generesult.sh
+
+# 查看文件大小
+ls -lh *.csv
+# 进入R中查看
+R
+res <- read.csv("HX3_1_2_3_vs_Wm82_1_2_3_results.csv",row.names = 1)  # 查看其中一个结果文件
+# 查看数据结构
+dim(res)  
+colnames(res)
+# 查看最显著的差异基因
+head(res, 10)
+# 查看统计摘要
+summary(res$log2FoldChange)
+summary(res$padj)
+# 计数显著差异基因数量
+sum(res$padj < 0.05, na.rm = TRUE)
+sum(res$padj < 0.1, na.rm = TRUE)
+# 查看基因表达差异与正负相比（查看文件有没有反）
+res <- read.csv("HC22_1_2_3_vs_Wm82_1_2_3_results.csv", row.names = 1)
+top_genes <- rownames(res)[1:10]  #前十个最显著的基因名传递给top_genes
+comparison_table <- data.frame(
+    基因 = top_genes,
+    HC22平均表达 = rowMeans(counts[top_genes, c("HC22_1", "HC22_2", "HC22_3")]),  #从counts数据框中选取top_genes这些行和HC22组的3个重复样本列并计算平均值
+    Wm82平均表达 = rowMeans(counts[top_genes, c("Wm82_1", "Wm82_2", "Wm82_3")]), 
+    log2FC = res[top_genes, "log2FoldChange"],  #从res中提取top_genes这些基因的log2FoldChange值
+    上下调 = ifelse(res[top_genes, "log2FoldChange"] > 0, "up", "down"))    #判断log2FoldChange是否大于0，大于0返回“up”，小于0返回“down”
+print(comparison_table)
+
+
+
+#转录本水平差异表达分析（例子）
+counts<-read.csv("F:/transcript_count_matrix.csv",header = T, row.names = 1)
+mycounts<-counts[,c(2,3,4,5)]
+condition <- factor(c(rep("ef1", 2), rep("HX3", 2)), levels = c("ef1","HX3"))
+colData <- data.frame(row.names = colnames(mycounts), condition)
+dds <- DESeqDataSetFromMatrix(mycounts, colData, design = ~condition)
+dds <- DESeq(dds)
+res = results(dds, contrast=c("condition", "ef1","HX3"))
+res = res[order(res$pvalue),]
+summary(res)
+write.csv(res, file="ef1_5_6_vs_HX3_5_7_transcript.csv")
+
+# mine
+vim run_transcriptresult.sh
+#!/bin/bash
+varieties=("HC22" "HH43" "HX3" "ZH13")  ##最好一个一个样本跑，避免CPU内存占用过多
+for variety in "${varieties[@]}"; do
+    echo "正在处理品种: $variety"
+    sleep 5
+    Rscript -e "
+    library(DESeq2)
+            # 读取数据
+            counts <- read.table('/mnt/nfs2/stu_fy/hms/Data/${variety}_1_2_3_Wm82_1_2_3.transcript_count', header = TRUE, row.names = 1)
+            # 清理列名
+            counts <- counts[, 6:11]
+            colnames(counts) <- c('${variety}_1', '${variety}_2', '${variety}_3','Wm82_1', 'Wm82_2', 'Wm82_3')
+            # 创建实验设计
+            condition <- factor(c(rep('${variety}', 3), rep('Wm82', 3)),levels = c('Wm82', '${variety}'))
+            colData <- data.frame(row.names = colnames(counts), condition)
+            # DESeq2分析 - 禁用并行计算
+            dds <- DESeqDataSetFromMatrix(counts, colData, design = ~condition)
+            dds <- DESeq(dds, parallel = FALSE)  # 单线程模式
+            res <- results(dds, contrast = c('condition', '${variety}', 'Wm82'))
+            res <- res[order(res\$padj), ]
+            # 保存结果
+            write.csv(res, file = '${variety}_1_2_3_vs_Wm82_1_2_3_transcript.csv')
+            cat('${variety} 分析完成！\\\\n')
+            "
+            sleep 5
+done
+echo "所有品种转录本差异分析完成!"
+chmod +x run_transcriptresult.sh
+./run_transcriptresult.sh
+ls -lh *.csv 
+
+#分开上下调基因
+csv_files <- list.files(pattern = "\\.csv$")
+#循环处理每个.csv文件
+for (csv_file in csv_files) {
+    #生成对应的.xls文件名
+    xls_file <- sub("\\.csv$", ".xls", csv_file)
+#读取.csv文件
+    res <- read.csv(csv_file, header = TRUE)
+ #进行数据筛选和处理
+    ressig <- res[which(res$padj < 0.05 & abs(res$log2FoldChange) > 1), ]
+    ressig[ressig$log2FoldChange > 0, 'up_down'] <- 'up'  #表达量显著上调的基因
+    ressig[ressig$log2FoldChange < 0, 'up_down'] <- 'down'  #表达量显著下调的基因
+# 输出处理后的结果到.xls文件(分隔符为tab，列名保存，行号保存，无需给文本加引号，NA值用空字符代替)
+    write.table(ressig, xls_file, sep = "\t", col.names = TRUE, row.names = FALSE, quote = FALSE, na = "") }
+
+# mine
+csv_files <- list.files(pattern = "\\.csv$")
+for (csv_file in csv_files) {
+    xls_file <- sub("\\.csv$", ".xls", csv_file)
+    res <- read.csv(csv_file, header = TRUE)
+    ressig <- res[which(res$padj < 0.05 & abs(res$log2FoldChange) > 1), ]
+    ressig$up_down <- ifelse(ressig$log2FoldChange > 0, "up", "down")
+    write.table(ressig, xls_file, sep = "\t", col.names = TRUE, row.names = FALSE, quote = FALSE, na = "") }
+# check
+head(ressig) # 查看处理后的数据前几行
+cat("筛选出", nrow(ressig), "个差异基因\n")  # 查看筛选出的差异基因数量
+table(ressig$up_down)  # 查看上下调分布
+# 查看基本统计信息
+summary(ressig$log2FoldChange)
+summary(ressig$padj)
