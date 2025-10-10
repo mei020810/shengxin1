@@ -7,7 +7,6 @@ gffread Gmax_508_Wm82.a4.v1.gene.gff3 -T -o Gmax_508_Wm82.a4.v1.gene.gtf
 hisat2_extract_exons.py Gmax_508_Wm82.a4.v1.gene.gtf > Gmax_508_Wm82.a4.v1.exon.txt
 hisat2_extract_splice_sites.py Gmax_508_Wm82.a4.v1.gene.gtf > Gmax_508_Wm82.a4.v1.ss.txt
 
-
 hisat2_extract_exons.py ~/GWAS_Glycine/Glycine_max_genome/ncbi-download/Huaxia3_v1_GCA_014282145.1/genomic.gtf  > Huaxia3_v1_GCA_014282145.1.exon.txt
 hisat2_extract_splice_sites.py ~/GWAS_Glycine/Glycine_max_genome/ncbi-download/Huaxia3_v1_GCA_014282145.1/genomic.gtf  > Huaxia3_v1_GCA_014282145.1.ss.txt
 
