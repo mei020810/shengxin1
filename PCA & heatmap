@@ -1,1 +1,16 @@
-
+# 制作表格 所需文件：hisat2生成sam时的log以及基因水平的.xls文件（reasult.xls）
+# 表头：Sample	 Clean data 	Mapping ratio	 Aligned concordant	 Concordantly ratio	 Total DEGs	 Up-regulated	 Down-regulated
+cat nohup_HC22_1;cat nohup_HC22_2;cat nohup_HC22_3;cat nohup_Wm82_1;cat nohup_Wm82_2;cat nohup_Wm82_3
+# 将所得结果扔给deepseek统计 得到前4列数据
+{
+ total_exact=$(tail -n +2 "HC22_1_2_3_vs_Wm82_1_2_3_results.xls" | wc -l)
+ up_exact=$(tail -n +2 "HC22_1_2_3_vs_Wm82_1_2_3_results.xls" | grep -c "up$")
+ down_exact=$(tail -n +2 "HC22_1_2_3_vs_Wm82_1_2_3_results.xls" | grep -c "down$")
+ 
+ echo "精确统计结果："
+ echo "Total: $total_exact"
+ echo "Up: $up_exact" 
+ echo "Down: $down_exact"
+ echo "Up + Down = $((up_exact + down_exact))"
+ }
+# 将所得结果直接填进表里
