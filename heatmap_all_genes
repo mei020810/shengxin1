@@ -1,0 +1,69 @@
+vim heatmap_all_genes.R
+
+library(DESeq2)
+library(pheatmap)
+setwd("/mnt/nfs2/stu_fy/hms/Data")
+
+# 读取数据
+sample_info <- read.csv("sample_info_final.csv", row.names = 1)
+
+# 创建标准化counts
+create_normalized_counts <- function() {
+    varieties <- c("HC22", "HH43", "HX3", "ZH13")
+    all_counts <- NULL
+    for (variety in varieties) {
+        count_file <- paste0(variety, "_1_2_3_Wm82_1_2_3.readscount")
+        counts <- read.table(count_file, header = TRUE, row.names = 1, sep = "\t")
+        count_data <- counts[, 6:11]
+        colnames(count_data) <- c(paste0(variety, "_", 1:3), paste0("Wm82_", 1:3))
+        if (is.null(all_counts)) {
+            all_counts <- count_data
+        } else {
+            new_cols <- paste0(variety, "_", 1:3)
+            all_counts <- cbind(all_counts, count_data[, new_cols])
+        }
+    }
+    return(all_counts)
+}
+
+counts_data <- create_normalized_counts()
+counts_data <- round(counts_data[, rownames(sample_info)])
+
+# 创建DESeq2对象并标准化
+dds <- DESeqDataSetFromMatrix(counts_data, sample_info, ~ condition)
+dds <- estimateSizeFactors(dds)
+normalized_counts <- counts(dds, normalized = TRUE)
+
+cat("原始基因数:", nrow(normalized_counts), "\n")
+
+# 使用所有基因
+normalized_counts_filtered <- normalized_counts  # 直接使用所有基因
+
+cat("用于热图的基因数量:", nrow(normalized_counts_filtered), "\n")
+
+# 样本间相关性热图
+cat("生成样本相关性热图（使用所有基因）...\n")
+sample_cor <- cor(normalized_counts_filtered, method = "pearson")
+
+# 创建注释信息
+annotation_col <- data.frame(
+    Condition = sample_info$condition,
+    Variety = sample_info$variety
+)
+rownames(annotation_col) <- colnames(normalized_counts_filtered)
+
+# 热图(默认设置)
+pheatmap(sample_cor,
+         clustering_distance_rows = "euclidean",
+         clustering_distance_cols = "euclidean", 
+         annotation_col = annotation_col,
+         main = paste("Sample Correlation Heatmap - All", nrow(normalized_counts_filtered), "Genes"),
+         display_numbers = TRUE,
+         number_format = "%.2f",
+         filename = "sample_correlation_all_genes.png",
+         width = 10, height = 8)
+
+cat("样本相关性热图生成完成: sample_correlation_all_genes.png\n")
+cat("实际使用的基因数量:", nrow(normalized_counts_filtered), "\n")
+
+Rscript heatmap_all_genes.R
