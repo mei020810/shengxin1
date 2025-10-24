@@ -83,7 +83,7 @@ dds <- DESeqDataSetFromMatrix(
 				      )
 
 cat("原始基因数:", nrow(dds), "\n")
-keep <- rowSums(counts(dds) >= 10) >= 3
+keep <- rowSums(counts(dds)) > 0
 dds <- dds[keep, ]
 cat("过滤后保留基因数:", nrow(dds), "\n")
 
