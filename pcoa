@@ -123,3 +123,8 @@ cat("\nPCoA方差解释率: Axis.1 =", percent_var[1], "%, Axis.2 =", percent_va
 
 Rscript pcoa_test.R 
 
+vim pcoa_labels.R
+
+
+
+
