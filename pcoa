@@ -195,6 +195,11 @@ counts_data <- round(counts_data)
 cat("步骤3: 创建DESeq2对象并过滤...\n")
 dds <- DESeqDataSetFromMatrix(counts_data,sample_info,~ condition)
 
+cat("原始基因数:", nrow(dds), "\n")
+keep <- rowSums(counts(dds)) > 0
+dds <- dds[keep, ]
+cat("过滤后保留基因数:", nrow(dds), "\n")
+
 cat("步骤4: 数据变换和手动PCoA（使用所有基因）...\n")
 vsd <- vst(dds, blind = FALSE)
 
