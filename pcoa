@@ -6,6 +6,7 @@ library(DESeq2)
 library(ggplot2)
 library(ape)  # 用于PCoA分析
 setwd("/mnt/nfs2/stu_fy/hms/Data")
+
 # 读取数据
 sample_info <- read.csv("sample_info_final.csv", row.names = 1)
 # 创建DESeq2对象和标准化数据
@@ -123,7 +124,8 @@ cat("\nPCoA方差解释率: Axis.1 =", percent_var[1], "%, Axis.2 =", percent_va
 
 Rscript pcoa_test.R 
 
-vim pcoa_labels.R
+
+vim pcoa_all_genes_labels.R
 
 library(DESeq2)
 library(ggplot2)
@@ -181,5 +183,73 @@ read_gene_counts <- function() {
 	    return(all_counts)
 }
 
+# 主分析流程
+cat("步骤1: 创建样本信息...\n")
+sample_info <- create_sample_info()
 
+cat("步骤2: 读取基因水平counts数据...\n")
+counts_data <- read_gene_counts()
+counts_data <- counts_data[, rownames(sample_info)]
+counts_data <- round(counts_data)
 
+cat("步骤3: 创建DESeq2对象并过滤...\n")
+dds <- DESeqDataSetFromMatrix(counts_data,sample_info,~ condition)
+
+cat("步骤4: 数据变换和手动PCoA（使用所有基因）...\n")
+vsd <- vst(dds, blind = FALSE)
+
+# 手动进行PCoA - 使用所有基因
+vsd_matrix <- assay(vsd)
+cat("用于PCA的基因数量:", nrow(vsd_matrix), "\n")
+# 计算样本间距离矩阵
+sample_dists <- dist(t(vsd_matrix))
+
+# PCoA分析
+pcoa <- cmdscale(sample_dists, k=3, eig=TRUE)
+pcoa_data <- as.data.frame(pcoa$points)
+colnames(pcoa_data) <- c("PCoA1", "PCoA2", "PCoA3")
+
+# 计算方差解释率
+eig <- pcoa$eig
+percent_var <- round(100 * eig[1:2] / sum(eig), 1)
+
+# 添加样本信息
+pcoa_data <- cbind(pcoa_data, sample_info[rownames(pcoa_data), ])
+
+# 添加样本名称列（用于标签）
+pcoa_data$name <- rownames(pcoa_data)
+
+cat("步骤5: 绘制带标签的PCoA图（使用所有", nrow(vsd_matrix), "个基因）...\n")
+p <- ggplot(pcoa_data, aes(x = PCoA1, y = PCoA2, color = condition)) +
+	    geom_point(size = 4, shape = 16) +
+	        # 添加连接线和标签
+	        geom_text_repel(aes(label = name),
+				                   box.padding = 0.5,      # 文本框与点的距离
+						                      point.padding = 0.5,    # 文本框与点的边缘距离
+						                      segment.color = 'grey50', # 连接线的颜色
+								                         segment.size = 0.5,     # 连接线粗细
+								                         max.overlaps = Inf,     # 确保所有标签都显示
+											                    size = 3) +             # 标签字体大小
+    xlab(paste0("PCoA1: ", percent_var[1], "% variance")) +
+	        ylab(paste0("PCoA2: ", percent_var[2], "% variance")) +
+		    ggtitle(paste0("PCoA Plot - All", nrow(vsd_matrix), "Genes")) +
+		        theme_bw() +
+			    theme(
+				          plot.title = element_text(hjust = 0.5, size = 16, face = "bold"),
+					          legend.position = "right"
+					      ) +
+    scale_color_manual(values = c(Control = "blue", Treatment = "red"))
+
+    print(p)
+
+# 保存结果
+ggsave("PCoA_all_genes_labels.png", p, width = 12, height = 8, dpi = 300, bg = "white")
+write.csv(pcoa_data, "PCoA_all_genes_with_labels.csv")
+	write.csv(sample_info, "sample_info_final.csv")
+
+cat("PCoA分析完成！\n")
+cat("使用的基因数量:", nrow(vsd_matrix), "\n")
+cat("方差解释率: PC1 =", percent_var[1], "%, PC2 =", percent_var[2], "%\n")
+cat("样本数量:", ncol(counts_data), "\n")
+
+Rscript pcoa_all_genes_labels.R
