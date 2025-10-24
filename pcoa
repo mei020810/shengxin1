@@ -125,6 +125,61 @@ Rscript pcoa_test.R
 
 vim pcoa_labels.R
 
+library(DESeq2)
+library(ggplot2)
+library(ggrepel)
+setwd("/mnt/nfs2/stu_fy/hms/Data")
+
+# 函数：创建样本信息
+create_sample_info <- function() {
+	    all_samples <- c(
+			             paste0("HC22_", 1:3), paste0("Wm82_", 1:3),
+				             paste0("HH43_", 1:3), 
+				             paste0("HX3_", 1:3), 
+					             paste0("ZH13_", 1:3)
+					         )
+    sample_info <- data.frame(
+			              sample = all_samples,
+				              variety = rep(c("HC22", "Wm82", "HH43", "HX3", "ZH13"), each = 3),
+				              condition = ifelse(grepl("Wm82", all_samples), "Control", "Treatment"),
+					              stringsAsFactors = FALSE
+					          )
+        rownames(sample_info) <- sample_info$sample
+        return(sample_info)
+}
+
+# 函数：读取基因水平counts数据
+read_gene_counts <- function() {
+	    varieties <- c("HC22", "HH43", "HX3", "ZH13")
+    all_counts <- NULL
+        
+        for (variety in varieties) {
+		        count_file <- paste0(variety, "_1_2_3_Wm82_1_2_3.readscount")
+            cat("读取文件:", count_file, "\n")
+	            
+	            if (file.exists(count_file)) {
+			                counts <- read.table(count_file, header = TRUE, row.names = 1, sep = "\t")
+	                count_data <- counts[, 6:11]
+			            colnames(count_data) <- c(paste0(variety, "_", 1:3), paste0("Wm82_", 1:3))
+			            
+			            if (is.null(all_counts)) {
+					                    all_counts <- count_data
+				                    cat("首次添加，包含所有样本\n")
+						                } else {
+									                # 只添加新品种的3个重复
+									                new_variety_cols <- paste0(variety, "_", 1:3)
+						                    all_counts <- cbind(all_counts, count_data[, new_variety_cols])
+								                    cat("添加新品种:", variety, "\n")
+								                }
+				            } else {
+						                cat("警告: 文件不存在 -", count_file, "\n")
+					            }
+	        }
+        
+        cat("最终数据维度:", dim(all_counts), "\n")
+	    cat("样本名称:", colnames(all_counts), "\n")
+	    return(all_counts)
+}
 
 
 
