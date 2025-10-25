@@ -1,0 +1,95 @@
+# 首先将featurecounts前面得到的counts文件转换成tpm文件和fpkm文件
+
+# 从counts中提取出基因长度和计数矩阵
+R
+library(tidyverse)
+# 读取featureCounts输出文件，跳过开头的注释行(随便用一个做基因长度文件，因为参考价基因组相同基因长度也相同）
+data <- read.table("HC22_1_2_3_Wm82_1_2_3.readscount", header = TRUE, skip = 1, comment.char = "")
+# 提取基因ID和长度
+gene_lengths <- data %>% select(Geneid, Length)
+# 保存基因长度文件
+write.table(gene_lengths, 
+            file = "Wm82_gene_lengths.txt", 
+            sep = "\t", 
+            row.names = FALSE, 
+            quote = FALSE)
+cat("文件包含", nrow(gene_lengths), "个基因的长度信息\n")
+
+
+vim create_tpm_pfkm.R
+
+library(tidyverse)
+
+# 1. 读取基因长度文件
+gene_lengths <- read.table("Wm82_gene_lengths.txt", header = TRUE, sep = "\t", stringsAsFactors = FALSE)
+rownames(gene_lengths) <- gene_lengths$Geneid
+
+# 2. 读取所有counts文件并合并
+read_and_merge_counts <- function() {
+  count_files <- list.files(pattern = "*\\.readscount$")
+  all_counts <- NULL
+  
+  for (file in count_files) {
+    cat("正在读取:", file, "\n")
+    
+    data <- read.table(file, header = TRUE, skip = 1, comment.char = "", row.names = 1)
+    
+    # 提取counts数据 (第6-11列)
+    count_data <- data[, 6:11, drop = FALSE]
+    
+    if (is.null(all_counts)) {
+      all_counts <- count_data
+    } else {
+      # 只保留新文件的样本，避免重复
+      new_samples <- setdiff(colnames(count_data), colnames(all_counts))
+      if (length(new_samples) > 0) {
+        all_counts <- cbind(all_counts, count_data[, new_samples, drop = FALSE])
+      }
+    }
+  }
+  
+  return(all_counts)
+}
+
+# 3. 读取counts数据
+cat("步骤1: 读取counts数据...\n")
+counts_data <- read_and_merge_counts()
+counts_data <- round(counts_data)  # 确保为整数
+
+# 4. 计算TPM和fpkm
+cat("步骤2: 计算TPM和fpkm...\n")
+calculate_both <- function(counts_data, gene_lengths) {
+  # 确保基因顺序一致
+  common_genes <- intersect(rownames(counts_data), rownames(gene_lengths))
+  counts_data <- counts_data[common_genes, ]
+  lengths_vector <- gene_lengths[common_genes, "Length"]
+  
+  cat("用于计算的基因数量:", length(common_genes), "\n")
+
+  # 计算FPKM
+  fpkm_matrix <- apply(counts_data, 2, function(sample_counts) {
+    total_reads <- sum(sample_counts, na.rm = TRUE)
+    (sample_counts / (lengths_vector / 1000)) / (total_reads / 1e6)
+  })
+  
+  # 计算TPM
+  tpm_matrix <- apply(counts_data, 2, function(sample_counts) {
+    rpk <- sample_counts / (lengths_vector / 1000)           # Reads Per Kilobase
+    tpm <- (rpk / sum(rpk, na.rm = TRUE)) * 1e6             # Transcripts Per Million
+    return(tpm)
+  })
+  rownames(fpkm_matrix) <- common_genes
+  rownames(tpm_matrix) <- common_genes
+  return(list(fpkm = fpkm_matrix, tpm = tpm_matrix))
+}
+
+results <- calculate_both(counts_data, gene_lengths)
+
+# 5. 保存文件
+cat("步骤3: 保存文件...\n")
+write.csv(results$fpkm, "FPKM_matrix.csv")
+write.csv(results$tpm, "TPM_matrix.csv")
+cat("TPM和FPKM文件都已生成!\n")
+
+Rscript create_tpm_pfkm.R
+
