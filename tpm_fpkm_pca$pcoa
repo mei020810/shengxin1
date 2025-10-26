@@ -1,4 +1,4 @@
-vim tpm_fpkm_pca_pcoa.R
+vim tpm_pca_pcoa.R
 
 library(tidyverse)
 library(ggrepel)
@@ -10,7 +10,6 @@ read_and_merge_tpm <- function() {
   abundance_files <- list.files("./gene.abundance", pattern = "*\\.gene\\.abundance$", full.names = TRUE)
   cat("找到的abundance文件:\n")
   print(basename(abundance_files))
-  
   all_tpm <- NULL
   
   for (file in abundance_files) {
@@ -21,10 +20,7 @@ read_and_merge_tpm <- function() {
     sample_name <- gsub("\\.gene\\.abundance$", "", basename(file))
     
     # 提取基因ID和TPM列
-    tpm_data <- data.frame(
-      GeneID = data$`Gene.ID`,
-      TPM = data$TPM
-    )
+    tpm_data <- data.frame(GeneID = data$`Gene.ID`, TPM = data$TPM)
     colnames(tpm_data)[2] <- sample_name  # 将列名改为样本名
     
     # 合并数据
@@ -38,14 +34,13 @@ read_and_merge_tpm <- function() {
   # 将GeneID设为行名
   tpm_matrix <- as.matrix(all_tpm[, -1])
   rownames(tpm_matrix) <- all_tpm$GeneID
-  
+  tpm_matrix[is.na(tpm_matrix)] <- 0
   return(tpm_matrix)
 }
 
 # 2. 读取TPM数据
 cat("步骤1: 读取并合并TPM数据...\n")
 tpm_data <- read_and_merge_tpm()
-
 cat("TPM矩阵维度:", dim(tpm_data), "\n")
 cat("样本名称:", colnames(tpm_data), "\n")
 
@@ -56,25 +51,20 @@ if ("Glyma.01G000100.Wm82.a4.v1" %in% rownames(tpm_data)) {
 }
 
 # 4. 创建样本信息
-create_sample_info <- function(sample_names) {
-  sample_info <- data.frame(
-    sample = sample_names,
-    variety = gsub("_\\d+$", "", sample_names),
-    condition = ifelse(grepl("Wm82", sample_names), "Control", "Treatment"),
-    stringsAsFactors = FALSE
-  )
-  rownames(sample_info) <- sample_info$sample
-  return(sample_info)
-}
-
-sample_info <- create_sample_info(colnames(tpm_data))
+sample_info <- data.frame(
+  sample = colnames(tpm_data),
+  variety = gsub("_\\d+$", "", colnames(tpm_data)),
+  condition = ifelse(grepl("Wm82", colnames(tpm_data)), "Control", "Treatment"),
+  stringsAsFactors = FALSE
+)
+rownames(sample_info) <- sample_info$sample
 
 # 5. 数据预处理
 cat("步骤2: 数据预处理...\n")
 cat("原始基因数量:", nrow(tpm_data), "\n")
 
-# 过滤低表达基因
-keep_genes <- rowSums(tpm_data > 0.1) >= 2  # 在至少2个样本中TPM > 0.1
+# 只过滤为0的基因
+keep_genes <- rowSums(tpm_data) > 0
 tpm_filtered <- tpm_data[keep_genes, ]
 cat("过滤后基因数量:", nrow(tpm_filtered), "\n")
 
@@ -106,25 +96,29 @@ pcoa_data$name <- rownames(pcoa_data)
 
 # 8. 绘图
 cat("步骤5: 绘制图形...\n")
-pca_plot <- ggplot(pca_data, aes(x = PC1, y = PC2, color = condition, shape = variety)) +
+pca_plot <- ggplot(pca_data, aes(x = PC1, y = PC2, color = condition)) +
   geom_point(size = 4) +
   geom_text_repel(aes(label = name), size = 3) +
   xlab(paste0("PC1: ", percent_var_pca[1], "% variance")) +
   ylab(paste0("PC2: ", percent_var_pca[2], "% variance")) +
-  ggtitle("PCA Plot - TPM Data (from abundance files)") +
-  theme_bw()
+  ggtitle(paste0("PCA Plot - TPM Data", nrow(log_tpm), " Genes")) + 
+  theme_bw() + 
+  theme(plot.title = element_text(hjust = 0.5, face = "bold")) + 
+  scale_color_manual(values = c(Control = "blue", Treatment = "red"))
 
-pcoa_plot <- ggplot(pcoa_data, aes(x = PCoA1, y = PCoA2, color = condition, shape = variety)) +
+pcoa_plot <- ggplot(pcoa_data, aes(x = PCoA1, y = PCoA2, color = condition)) +
   geom_point(size = 4) +
   geom_text_repel(aes(label = name), size = 3) +
   xlab(paste0("PCoA1: ", percent_var_pcoa[1], "% variance")) +
   ylab(paste0("PCoA2: ", percent_var_pcoa[2], "% variance")) +
-  ggtitle("PCoA Plot - TPM Data (from abundance files)") +
-  theme_bw()
+  ggtitle(paste0("PCA Plot - TPM Data", nrow(log_tpm), " Genes")) + 
+  theme_bw() + 
+  theme(plot.title = element_text(hjust = 0.5, face = "bold")) + 
+  scale_color_manual(values = c(Control = "blue", Treatment = "red"))
 
 # 9. 保存
-ggsave("PCA_plot_abundance.png", pca_plot, width = 10, height = 8, dpi = 300)
-ggsave("PCoA_plot_abundance.png", pcoa_plot, width = 10, height = 8, dpi = 300)
+ggsave("PCA_tpm.png", pca_plot, width = 12, height = 8, dpi = 300, bg = "white")
+ggsave("PCoA_tpm.png", pcoa_plot, width = 12, height = 8, dpi = 300, bg = "white")
 
 write.csv(tpm_data, "TPM_matrix_from_abundance.csv")
 
@@ -132,3 +126,136 @@ cat("=== 分析完成 ===\n")
 cat("使用的基因数量:", nrow(log_tpm), "\n")
 cat("PCA方差解释率: PC1 =", percent_var_pca[1], "%, PC2 =", percent_var_pca[2], "%\n")
 cat("PCoA方差解释率: PCoA1 =", percent_var_pcoa[1], "%, PCoA2 =", percent_var_pcoa[2], "%\n")
+
+Rscript tpm_pca_pcoa.R
+
+vim fpkm_pca_pcoa.R
+
+library(tidyverse)
+library(ggrepel)
+setwd("/mnt/nfs2/stu_fy/hms/Data")
+
+# 1. 读取并合并所有样本的FPKM数据
+read_and_merge_fpkm <- function() {
+  # 获取所有abundance文件
+  abundance_files <- list.files("./gene.abundance", pattern = "*\\.gene\\.abundance$", full.names = TRUE)
+  cat("找到的abundance文件:\n")
+  print(basename(abundance_files))
+  all_fpkm <- NULL
+  
+  for (file in abundance_files) {
+    cat("正在读取:", basename(file), "\n")
+    # 读取abundance文件
+    data <- read.table(file, header = TRUE, sep = "\t")
+    # 提取样本名（从文件名中提取，如 HC22_1）
+    sample_name <- gsub("\\.gene\\.abundance$", "", basename(file))
+    
+    # 提取基因ID和FPKM列
+    fpkm_data <- data.frame(GeneID = data$`Gene.ID`, FPKM = data$FPKM)
+    colnames(fpkm_data)[2] <- sample_name  # 将列名改为样本名
+    
+    # 合并数据
+    if (is.null(all_fpkm)) {
+      all_fpkm <- fpkm_data
+    } else {
+      all_fpkm <- full_join(all_fpkm, fpkm_data, by = "GeneID")
+    }
+  }
+  
+  # 将GeneID设为行名
+  fpkm_matrix <- as.matrix(all_fpkm[, -1])
+  rownames(fpkm_matrix) <- all_fpkm$GeneID
+  fpkm_matrix[is.na(fpkm_matrix)] <- 0
+  return(fpkm_matrix)
+}
+
+# 2. 读取FPKM数据
+cat("步骤1: 读取并合并FPKM数据...\n")
+fpkm_data <- read_and_merge_fpkm()
+cat("FPKM矩阵维度:", dim(fpkm_data), "\n")
+cat("样本名称:", colnames(fpkm_data), "\n")
+
+# 3. 验证已知基因的值
+if ("Glyma.01G000100.Wm82.a4.v1" %in% rownames(fpkm_data)) {
+  cat("验证 Glyma.01G000100.Wm82.a4.v1 在 HC22_1 的FPKM值:\n")
+  print(fpkm_data["Glyma.01G000100.Wm82.a4.v1", "HC22_1"])
+}
+
+# 4. 创建样本信息
+sample_info <- data.frame(
+  sample = colnames(fpkm_data),
+  variety = gsub("_\\d+$", "", colnames(fpkm_data)),
+  condition = ifelse(grepl("Wm82", colnames(fpkm_data)), "Control", "Treatment"),
+  stringsAsFactors = FALSE
+)
+rownames(sample_info) <- sample_info$sample
+
+# 5. 数据预处理
+cat("步骤2: 数据预处理...\n")
+cat("原始基因数量:", nrow(fpkm_data), "\n")
+
+# 只过滤为0的基因
+keep_genes <- rowSums(fpkm_data) > 0
+fpkm_filtered <- fpkm_data[keep_genes, ]
+cat("过滤后基因数量:", nrow(fpkm_filtered), "\n")
+
+# log2转换
+log_fpkm <- log2(fpkm_filtered + 1)
+
+# 6. PCA分析
+cat("步骤3: 进行PCA分析...\n")
+pca_result <- prcomp(t(log_fpkm), scale. = TRUE)
+pca_summary <- summary(pca_result)
+percent_var_pca <- round(100 * pca_summary$importance[2, 1:2], 1)
+
+pca_data <- as.data.frame(pca_result$x)
+pca_data <- cbind(pca_data, sample_info[rownames(pca_data), ])
+pca_data$name <- rownames(pca_data)
+
+# 7. PCoA分析
+cat("步骤4: 进行PCoA分析...\n")
+sample_dists <- dist(t(log_fpkm))
+pcoa_result <- cmdscale(sample_dists, k = 3, eig = TRUE)
+pcoa_data <- as.data.frame(pcoa_result$points)
+colnames(pcoa_data) <- c("PCoA1", "PCoA2", "PCoA3")
+
+eig <- pcoa_result$eig
+percent_var_pcoa <- round(100 * eig[1:2] / sum(eig[eig > 0]), 1)
+
+pcoa_data <- cbind(pcoa_data, sample_info[rownames(pcoa_data), ])
+pcoa_data$name <- rownames(pcoa_data)
+
+# 8. 绘图
+cat("步骤5: 绘制图形...\n")
+pca_plot <- ggplot(pca_data, aes(x = PC1, y = PC2, color = condition)) +
+  geom_point(size = 4) +
+  geom_text_repel(aes(label = name), size = 3) +
+  xlab(paste0("PC1: ", percent_var_pca[1], "% variance")) +
+  ylab(paste0("PC2: ", percent_var_pca[2], "% variance")) +
+  ggtitle(paste0("PCA Plot - FPKM Data", nrow(log_fpkm), " Genes")) + 
+  theme_bw() + 
+  theme(plot.title = element_text(hjust = 0.5, face = "bold")) + 
+  scale_color_manual(values = c(Control = "blue", Treatment = "red"))
+
+pcoa_plot <- ggplot(pcoa_data, aes(x = PCoA1, y = PCoA2, color = condition)) +
+  geom_point(size = 4) +
+  geom_text_repel(aes(label = name), size = 3) +
+  xlab(paste0("PCoA1: ", percent_var_pcoa[1], "% variance")) +
+  ylab(paste0("PCoA2: ", percent_var_pcoa[2], "% variance")) +
+  ggtitle(paste0("PCA Plot - FPKM Data", nrow(log_fpkm), " Genes")) + 
+  theme_bw() + 
+  theme(plot.title = element_text(hjust = 0.5, face = "bold")) + 
+  scale_color_manual(values = c(Control = "blue", Treatment = "red"))
+
+# 9. 保存
+ggsave("PCA_fpkm.png", pca_plot, width = 12, height = 8, dpi = 300, bg = "white")
+ggsave("PCoA_fpkm.png", pcoa_plot, width = 12, height = 8, dpi = 300, bg = "white")
+
+write.csv(fpkm_data, "FPKM_matrix_from_abundance.csv")
+
+cat("=== 分析完成 ===\n")
+cat("使用的基因数量:", nrow(log_fpkm), "\n")
+cat("PCA方差解释率: PC1 =", percent_var_pca[1], "%, PC2 =", percent_var_pca[2], "%\n")
+cat("PCoA方差解释率: PCoA1 =", percent_var_pcoa[1], "%, PCoA2 =", percent_var_pcoa[2], "%\n")
+
+Rscript fpkm_pca_pcoa.R
