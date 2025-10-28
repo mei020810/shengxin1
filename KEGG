@@ -1,1 +1,83 @@
-vim 
+vim KEGG_plot.R
+
+library(dplyr)
+library(ggplot2)
+library(stringr)
+# 定义处理组列表
+groups <- c("HC22", "HH43", "HX3", "ZH13")
+
+# 为每个处理组生成KEGG富集图
+for(group in groups) {
+  cat("正在处理:", group, "\n")
+  
+  # 1. 读取数据
+  kegg_data <- read.csv(paste0(group, "_KEGG_Enrichment.csv")) 
+  
+  # 2. 筛选数据
+  filtered_kegg <- kegg_data %>%
+    filter(pvalue < 0.05) %>%
+    slice_min(pvalue, n = 15) %>%
+    ungroup()
+  
+  # 如果筛选后没有数据，跳过该组
+  if(nrow(filtered_kegg) == 0) {
+    cat(group, "没有显著富集的pathway，跳过\n")
+    next
+  }
+  
+  # 数据预处理
+  filtered_kegg <- filtered_kegg %>%
+    mutate(
+      Description_wrapped = str_wrap(Description, width = 35),
+      neg_log10_pvalue = -log10(pvalue),
+      Count = as.numeric(sapply(strsplit(GeneRatio, "/"), function(x) x[1])),
+      GeneRatio_value = sapply(strsplit(GeneRatio, "/"), function(x) as.numeric(x[1]) / as.numeric(x[2]))
+    )
+  
+  # 定义统一的theme样式
+  
+  my_theme_with_legend <- theme_bw() +
+    theme(
+      axis.text.y = element_text(size = 13, lineheight = 0.9),
+      axis.text.x = element_text(size = 11),
+      axis.title = element_text(size = 14),
+      plot.title = element_text(hjust = 0.5, face = "bold", size = 16),
+      plot.margin = margin(1, 1, 1, 1, "cm"),
+      strip.background = element_rect(fill = "lightgrey"),
+      strip.text = element_text(face = "bold", size = 11),
+      legend.position = "right"
+    )
+
+# 以GeneRatio为横坐标的气泡图
+p1 <- ggplot(filtered_kegg, 
+         aes(x = GeneRatio_value,
+             y = reorder(Description_wrapped, GeneRatio_value),
+             size = Count,
+             color = -log10(pvalue))) +
+    geom_point(alpha = 0.7) +
+    labs(x = "GeneRatio", y = "KEGG Pathways", 
+         title = paste(group, "KEGG Enrichment"), size = "Gene Count", color = "-log10(p-value)") +
+    scale_color_gradient(low = "blue", high = "red") +  # 颜色梯度
+    my_theme_with_legend
+
+  # 以Count为横坐标的条形图
+  p_count_bar <- ggplot(filtered_kegg, 
+         aes(x = Count,  # 使用差异基因数作为横坐标
+             y = reorder(Description_wrapped, Count),  # 按基因数排序
+             fill = neg_log10_pvalue)) +  # 用颜色表示显著性
+    geom_col(width = 0.7) +
+    labs(x = "Number of Differentially Expressed Genes", 
+         y = "KEGG Pathways",
+         title = paste(group, "KEGG Enrichment"),
+         fill = "-log10(p-value)") +
+    scale_fill_gradient(low = "lightblue", high = "darkred") +  # 颜色梯度
+    my_theme_with_legend
+
+  ggsave(paste0(group, "_kegg_generatio.png"), p1, width = 16, height = 16, dpi = 300)
+  ggsave(paste0(group, "_kegg_count_bar.png"), p_count_bar, width = 14, height = 12, dpi = 300)
+cat(group, "的KEGG富集图已保存!\n\n")
+}
+
+cat("所有处理组的KEGG富集分析完成!\n")
+
+Rscript KEGG_plot.R
