@@ -1,0 +1,457 @@
+vim DEG_genes_list.R
+
+csv_files <- list.files(pattern = "*results\\.csv$")
+
+for (csv_file in csv_files) {
+    res <- read.csv(csv_file, header = TRUE)
+    
+    # 筛选差异基因
+    ressig <- res[which(abs(res$log2FoldChange) > 2 & res$baseMean > 100), ]
+    
+    # 保存详细表格
+    xls_file <- sub("\\.csv$", ".xls", csv_file)
+    ressig$up_down <- ifelse(ressig$log2FoldChange > 0, "up", "down")
+    write.table(ressig, xls_file, sep = "\t", col.names = TRUE, 
+                row.names = FALSE, quote = FALSE, na = "")
+    
+    cat(csv_file, "->", nrow(ressig), "个基因\n")
+}
+
+Rscript DEG_genes_list.R
+
+vim genes_list.R
+# 读取差异表达文件
+de_files <- c("HC22_1_2_3_vs_Wm82_1_2_3_results.xls", "HH43_1_2_3_vs_Wm82_1_2_3_results.xls","HX3_1_2_3_vs_Wm82_1_2_3_results.xls","ZH13_1_2_3_vs_Wm82_1_2_3_results.xls")
+# 定义输出文件名前缀
+output_prefixes <- c("HC22", "HH43", "HX3", "ZH13")
+# 创建空列表存储所有结果
+all_sig_genes <- list()
+# 循环处理每个文件
+for(i in 1:length(de_files)) {
+  cat("正在处理文件:", de_files[i], "\n")
+  # 读取差异表达文件
+  de_results <- read.table(de_files[i], header = TRUE, sep = "\t") 
+  # 清理基因ID
+   de_results$clean_id <- gsub("^(Glyma\\.[0-9]+G[0-9]+).*", "\\1", de_results$X)
+    de_results$clean_id <- gsub("^(Glyma\\.[U][0-9]+).*", "\\1", de_results$clean_id)
+  # 筛选显著差异基因
+  sig_genes <- de_results[abs(de_results$log2FoldChange) > 2, ]
+  gene_list <- unique(sig_genes$clean_id)
+  # 保存到列表
+  all_sig_genes[[output_prefixes[i]]] <- gene_list
+  # 保存单独的基因列表文件
+  output_file <- paste0(output_prefixes[i], "_Wm82_clean_soybean_genes.txt")
+  write.table(gene_list, output_file, 
+              row.names = FALSE, col.names = FALSE, quote = FALSE)
+  
+  cat("  显著基因数量:", length(gene_list), "\n")
+  cat("  已保存到:", output_file, "\n\n")
+}
+# 查看汇总结果
+cat("各样品显著基因数量汇总:\n")
+for(name in names(all_sig_genes)) {
+  cat(name, ":", length(all_sig_genes[[name]]), "个基因\n")
+}
+Rscript genes_list.R
+
+# https://venyao.xyz/soybeangdb/去该网站获取GO和KEGG富集的文件
+vim GO_plot_test.R
+
+library(dplyr)
+library(ggplot2)
+library(stringr)
+# 1. 读取数据
+bp_data <- read.csv("HC22_GO_Biological_Process.csv") %>% mutate(Category = "Biological Process")
+mf_data <- read.csv("HC22_GO_Molecular_Function.csv") %>% mutate(Category = "Molecular Function")
+cc_data <- read.csv("HC22_GO_Cellular_Component.csv") %>% mutate(Category = "Cellular Component")
+
+# 2. 合并三个数据框
+combined_go <- bind_rows(bp_data, mf_data, cc_data)
+
+# 3. 基于pvalue筛选，每个类别取前10个
+filtered_go <- combined_go %>%
+  filter(pvalue < 0.05) %>%  # 使用pvalue列进行筛选
+  group_by(Category) %>%
+  slice_min(pvalue, n = 10) %>% 
+  ungroup()
+
+# 创建换行标签
+filtered_go <- filtered_go %>%
+  mutate(Description_wrapped = str_wrap(Description, width = 25))
+
+# 检查是否有p.adjust列，如果没有就用pvalue
+if (!"p.adjust" %in% names(filtered_go)) {
+  filtered_go$p.adjust <- filtered_go$pvalue
+}
+
+# 清理GeneRatio列并转换为数值
+filtered_go <- filtered_go %>%
+  mutate(
+    # 计算GeneRatio数值
+    GeneRatio_value = sapply(strsplit(GeneRatio, "/"), function(x) {
+      as.numeric(x[1]) / as.numeric(x[2])
+    }))
+
+# 计算 -log10(p.adjust)
+filtered_go <- filtered_go %>%
+  mutate(neg_log10_padjust = -log10(p.adjust))
+
+# 提取GeneRatio中的基因数作为Count
+filtered_go <- filtered_go %>%
+  mutate(Count = as.numeric(sapply(strsplit(GeneRatio, "/"), function(x) x[1])))
+
+p_wrapped_25 <- ggplot(filtered_go, 
+       aes(x = FoldEnrichment,
+           y = reorder(Description_wrapped_25, FoldEnrichment),
+           fill = Category)) +
+  geom_col(width = 0.7) +
+  facet_grid(Category ~ ., scales = "free_y", space = "free_y") +
+  labs(x = "Fold Enrichment", y = "GO Terms") +
+  theme_bw() +
+  theme(
+    axis.text.y = element_text(size = 11, lineheight = 0.8),
+    axis.text.x = element_text(size = 10),
+    axis.title = element_text(size = 12),
+    plot.title = element_text(hjust = 0.5, face = "bold"),
+    plot.margin = margin(0.5, 0.5, 0.5, 0.5, "cm"),
+    strip.background = element_rect(fill = "lightgrey"),
+    strip.text = element_text(face = "bold", size = 11),
+    legend.position = "none"
+  )
+ggsave("test7_wrapped_25.png", p_wrapped_25, width = 14, height = 16, dpi = 300) #enrichment作为横坐标，条形图
+
+p_academic <- ggplot(filtered_go, 
+       aes(x = neg_log10_padjust,  # 使用 -log10(p.adjust)
+           y = reorder(Description_wrapped, neg_log10_padjust),  # 按显著性排序
+           fill = Category)) +
+  geom_col(width = 0.7) +
+  facet_grid(Category ~ ., scales = "free_y", space = "free_y") +
+  labs(x = "-log10(adjusted p-value)", 
+       y = "GO Terms",
+       ) +
+  theme_bw() +
+  theme(
+    axis.text.y = element_text(size = 11, lineheight = 0.8),
+    axis.text.x = element_text(size = 10),
+    axis.title = element_text(size = 12),
+    plot.title = element_text(hjust = 0.5, face = "bold"),
+    plot.margin = margin(0.5, 0.5, 0.5, 0.5, "cm"),
+    strip.background = element_rect(fill = "lightgrey"),
+    strip.text = element_text(face = "bold", size = 11),
+    legend.position = "none"
+  )
+ggsave("test8.png", p_academic, width = 14, height = 16, dpi = 300) #-log10（adjusted p-value）横坐标，条形图
+
+p_dotplot <- ggplot(filtered_go, 
+       aes(x = neg_log10_padjust,
+           y = reorder(Description_wrapped, neg_log10_padjust),
+           size = Count,  # 现在Count列应该存在了
+           color = Category)) +
+  geom_point(alpha = 0.7) +
+  facet_grid(Category ~ ., scales = "free_y", space = "free_y") +
+  labs(x = "-log10(adjusted p-value)", 
+       y = "GO Terms",
+       title = "GO Enrichment Analysis",
+       size = "Gene Count",
+       color = "Category") +
+  theme_bw() +
+  theme(
+    axis.text.y = element_text(size = 11, lineheight = 0.8),
+    axis.text.x = element_text(size = 10),
+    axis.title = element_text(size = 12),
+    plot.title = element_text(hjust = 0.5, face = "bold"),
+    plot.margin = margin(0.5, 0.5, 0.5, 0.5, "cm"),
+    strip.background = element_rect(fill = "lightgrey"),
+    strip.text = element_text(face = "bold", size = 11)
+  )
+ggsave("test9.png", p_dotplot, width = 16, height = 16, dpi = 300)  #横坐标-log10，气泡图
+
+p_dotplot_generatio <- ggplot(filtered_go, 
+       aes(x = GeneRatio_value,
+           y = reorder(Description_wrapped, GeneRatio_value),
+           size = Count,  # 点的大小表示基因数量
+           color = Category)) +
+  geom_point(alpha = 0.7) +
+  facet_grid(Category ~ ., scales = "free_y", space = "free_y") +
+  labs(x = "GeneRatio", 
+       y = "GO Terms",
+       title = "GO Enrichment Analysis",
+       size = "Gene Count",
+       color = "Category") +
+  theme_bw() +
+  theme(
+    axis.text.y = element_text(size = 11, lineheight = 0.8),
+    axis.text.x = element_text(size = 10),
+    axis.title = element_text(size = 12),
+    plot.title = element_text(hjust = 0.5, face = "bold"),
+    plot.margin = margin(0.5, 0.5, 0.5, 0.5, "cm"),
+    strip.background = element_rect(fill = "lightgrey"),
+    strip.text = element_text(face = "bold", size = 11)
+  )
+ggsave("test10_GeneRatio.png", p_dotplot_generatio, width = 16, height = 16, dpi = 300) #横坐标Generatio，气泡图
+
+Rscript GO_plot_test.R
+
+vim GO_plot_create.R
+
+library(dplyr)
+library(ggplot2)
+library(stringr)
+# 定义处理组列表
+groups <- c("HC22", "HH43", "HX3", "ZH13")
+
+# 为每个处理组生成GO富集图
+for(group in groups) {
+  cat("正在处理:", group, "\n")
+  
+  # 1. 读取数据
+  bp_data <- read.csv(paste0(group, "_GO_Biological_Process.csv")) %>% mutate(Category = "Biological Process")
+  mf_data <- read.csv(paste0(group, "_GO_Molecular_Function.csv")) %>% mutate(Category = "Molecular Function")
+  cc_data <- read.csv(paste0(group, "_GO_Cellular_Component.csv")) %>% mutate(Category = "Cellular Component")
+  
+  # 2. 合并数据
+  combined_go <- bind_rows(bp_data, mf_data, cc_data)
+  
+  # 3. 筛选数据
+  filtered_go <- combined_go %>%
+    filter(pvalue < 0.05) %>%
+    group_by(Category) %>%
+    slice_min(pvalue, n = 10) %>%
+    ungroup()
+  
+  # 如果筛选后没有数据，跳过该组
+  if(nrow(filtered_go) == 0) {
+    cat(group, "没有显著富集的GO术语，跳过\n")
+    next
+  }
+  
+  # 数据预处理
+  filtered_go <- filtered_go %>%
+    mutate(
+      Description_wrapped = str_wrap(Description, width = 25),
+      p.adjust = ifelse("p.adjust" %in% names(.), p.adjust, pvalue),
+      neg_log10_padjust = -log10(p.adjust),
+      Count = as.numeric(sapply(strsplit(GeneRatio, "/"), function(x) x[1])),
+      GeneRatio_value = sapply(strsplit(GeneRatio, "/"), function(x) as.numeric(x[1]) / as.numeric(x[2]))
+    )
+  
+  # 定义统一的theme样式
+  my_theme <- theme_bw() +
+    theme(
+      axis.text.y = element_text(size = 11, lineheight = 0.8),
+      axis.text.x = element_text(size = 10),
+      axis.title = element_text(size = 12),
+      plot.title = element_text(hjust = 0.5, face = "bold"),
+      plot.margin = margin(0.5, 0.5, 0.5, 0.5, "cm"),
+      strip.background = element_rect(fill = "lightgrey"),
+      strip.text = element_text(face = "bold", size = 11),
+      legend.position = "none"
+    )
+  
+  my_theme_with_legend <- theme_bw() +
+    theme(
+      axis.text.y = element_text(size = 11, lineheight = 0.8),
+      axis.text.x = element_text(size = 10),
+      axis.title = element_text(size = 12),
+      plot.title = element_text(hjust = 0.5, face = "bold"),
+      plot.margin = margin(0.5, 0.5, 0.5, 0.5, "cm"),
+      strip.background = element_rect(fill = "lightgrey"),
+      strip.text = element_text(face = "bold", size = 11),
+      legend.position = "right"
+    )
+  
+  # 生成四种类型的图
+  # 图1: FoldEnrichment 条形图
+  p1 <- ggplot(filtered_go, 
+         aes(x = FoldEnrichment,
+             y = reorder(Description_wrapped, FoldEnrichment),
+             fill = Category)) +
+    geom_col(width = 0.7) +
+    facet_grid(Category ~ ., scales = "free_y", space = "free_y") +
+    labs(x = "Fold Enrichment", y = "GO Terms", title = paste(group, "- Fold Enrichment")) +
+    my_theme
+  
+  # 图4: GeneRatio 点图
+  p4 <- ggplot(filtered_go, 
+         aes(x = GeneRatio_value,
+             y = reorder(Description_wrapped, GeneRatio_value),
+             size = Count,
+             color = Category)) +
+    geom_point(alpha = 0.7) +
+    facet_grid(Category ~ ., scales = "free_y", space = "free_y") +
+    labs(x = "GeneRatio", y = "GO Terms", 
+         title = paste(group, "- Gene Ratio"), size = "Gene Count") +
+    my_theme_with_legend
+  
+  # 保存图片
+  ggsave(paste0(group, "_fold_enrichment.png"), p1, width = 14, height = 16, dpi = 300)
+  ggsave(paste0(group, "_generatio.png"), p4, width = 16, height = 16, dpi = 300)
+  
+  cat(group, "的4张图已保存完成!\n\n")
+}
+cat("所有处理组的GO富集分析完成!\n")
+
+Rscript GO_plot_create.R
+
+# 气泡图
+vim GO_dotplot.R
+
+library(dplyr)
+library(ggplot2)
+library(stringr)
+# 定义处理组列表
+groups <- c("HC22", "HH43", "HX3", "ZH13")
+
+for(group in groups) {
+  cat("正在处理:", group, "\n")
+  
+  tryCatch({
+    # 1. 读取数据 - 添加错误处理
+    bp_data <- read.csv(paste0(group, "_GO_Biological_Process.csv")) %>% mutate(Category = "Biological Process")
+    mf_data <- read.csv(paste0(group, "_GO_Molecular_Function.csv")) %>% mutate(Category = "Molecular Function")
+    cc_data <- read.csv(paste0(group, "_GO_Cellular_Component.csv")) %>% mutate(Category = "Cellular Component")
+    
+    # 2. 合并三个数据框
+    combined_go <- bind_rows(bp_data, mf_data, cc_data)
+    
+    # 3. 基于pvalue筛选，每个类别取前10个
+    filtered_go <- combined_go %>%
+      filter(pvalue < 0.05) %>%
+      group_by(Category) %>%
+      slice_min(pvalue, n = 10) %>% 
+      ungroup()
+    
+    # 如果筛选后没有数据，跳过
+    if(nrow(filtered_go) == 0) {
+      cat(group, "没有显著富集的GO术语，跳过\n")
+      next
+    }
+    
+    # 创建换行标签
+    filtered_go <- filtered_go %>%
+      mutate(Description_wrapped = str_wrap(Description, width = 25))
+    
+    # 检查是否有p.adjust列，如果没有就用pvalue
+    if (!"p.adjust" %in% names(filtered_go)) {
+      filtered_go$p.adjust <- filtered_go$pvalue
+    }
+    
+    # 清理GeneRatio列并转换为数值
+    filtered_go <- filtered_go %>%
+      mutate(
+        GeneRatio_value = sapply(strsplit(GeneRatio, "/"), function(x) {
+          as.numeric(x[1]) / as.numeric(x[2])
+        }))
+    
+    # 计算 -log10(p.adjust)
+    filtered_go <- filtered_go %>%
+      mutate(neg_log10_padjust = -log10(p.adjust))
+    
+    # 提取GeneRatio中的基因数作为Count
+    filtered_go <- filtered_go %>%
+      mutate(Count = as.numeric(sapply(strsplit(GeneRatio, "/"), function(x) x[1])))
+    
+    # 调试信息
+    cat("数据检查:\n")
+    cat("  - 行数:", nrow(filtered_go), "\n")
+    cat("  - -log10(p.adjust) 唯一值数量:", length(unique(filtered_go$neg_log10_padjust)), "\n")
+    cat("  - -log10(p.adjust) 范围:", range(filtered_go$neg_log10_padjust), "\n")
+    
+    # 气泡图 - 使用和单独运行完全相同的代码
+    p_dotplot <- ggplot(filtered_go, 
+           aes(x = neg_log10_padjust,
+               y = reorder(Description_wrapped, neg_log10_padjust),
+               size = Count,
+               color = Category)) +
+      geom_point(alpha = 0.7) +
+      facet_grid(Category ~ ., scales = "free_y", space = "free_y") +
+      labs(x = "-log10(adjusted p-value)", 
+           y = "GO Terms",
+           title = paste("GO Enrichment Analysis -", group),
+           size = "Gene Count",
+           color = "Category") +
+      theme_bw() +
+      theme(
+        axis.text.y = element_text(size = 11, lineheight = 0.8),
+        axis.text.x = element_text(size = 10),
+        axis.title = element_text(size = 12),
+        plot.title = element_text(hjust = 0.5, face = "bold"),
+        plot.margin = margin(0.5, 0.5, 0.5, 0.5, "cm"),
+        strip.background = element_rect(fill = "lightgrey"),
+        strip.text = element_text(face = "bold", size = 11)
+      )
+    
+    ggsave(paste0(group, "_dotplot.png"), p_dotplot, width = 16, height = 16, dpi = 300)
+    cat(group, "的气泡图保存成功!\n\n")
+    
+  }, error = function(e) {
+    cat("处理", group, "时出错:", e$message, "\n")
+  })
+}
+cat("所有处理组的GO富集分析完成!\n")
+
+Rscript GO_dotplot.R
+
+vim GO_significance.R
+
+library(dplyr)
+library(ggplot2)
+library(stringr)
+# 定义处理组列表
+groups <- c("HC22", "HH43", "HX3", "ZH13")
+
+for(group in groups) {
+  cat("正在处理:", group, "\n")
+  
+  # 读取和合并数据
+  bp_data <- read.csv(paste0(group, "_GO_Biological_Process.csv")) %>% mutate(Category = "Biological Process")
+  mf_data <- read.csv(paste0(group, "_GO_Molecular_Function.csv")) %>% mutate(Category = "Molecular Function")
+  cc_data <- read.csv(paste0(group, "_GO_Cellular_Component.csv")) %>% mutate(Category = "Cellular Component")
+  combined_go <- bind_rows(bp_data, mf_data, cc_data)
+  
+  # 筛选数据
+  filtered_go <- combined_go %>%
+    filter(pvalue < 0.05) %>%
+    group_by(Category) %>%
+    slice_min(pvalue, n = 10) %>%
+    ungroup()
+  
+  # 数据预处理
+  filtered_go <- filtered_go %>%
+    mutate(
+      Description_wrapped = str_wrap(Description, width = 25),
+      p.adjust = ifelse("p.adjust" %in% names(.), p.adjust, pvalue),
+      neg_log10_pvalue = -log10(pvalue),
+      Count = as.numeric(sapply(strsplit(GeneRatio, "/"), function(x) x[1])),
+      GeneRatio_value = sapply(strsplit(GeneRatio, "/"), function(x) as.numeric(x[1]) / as.numeric(x[2]))
+    )
+
+  # 定义theme
+  my_theme <- theme_bw() +
+    theme(
+      axis.text.y = element_text(size = 11, lineheight = 0.8),
+      axis.text.x = element_text(size = 10),
+      axis.title = element_text(size = 12),
+      plot.title = element_text(hjust = 0.5, face = "bold"),
+      plot.margin = margin(0.5, 0.5, 0.5, 0.5, "cm"),
+      strip.background = element_rect(fill = "lightgrey"),
+      strip.text = element_text(face = "bold", size = 11),
+      legend.position = "none"
+    )
+  
+  # 使用pvalue的条形图
+  p_academic <- ggplot(filtered_go, 
+         aes(x = neg_log10_pvalue,
+             y = reorder(Description_wrapped, neg_log10_pvalue),
+             fill = Category)) +
+    geom_col(width = 0.7) +
+    facet_grid(Category ~ ., scales = "free_y", space = "free_y") +
+    labs(x = "-log10(adjusted p-value)", y = "GO Terms") +
+    my_theme
+  
+  # 保存图片
+  ggsave(paste0(group, "_significance_fixed.png"), p_academic, width = 14, height = 16, dpi = 300)
+  cat(group, "的显著性图已保存!\n\n")
+}
+cat("所有处理组的GO富集分析完成!\n")
+Rscript GO_significance.R
