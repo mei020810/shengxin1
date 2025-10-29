@@ -2,7 +2,10 @@ vim pca_all_genes.R
 
 library(DESeq2)
 library(ggplot2)
+library(tidyverse)
 library(ggrepel)
+library(svglite)
+library(systemfonts)
 setwd("/mnt/nfs2/stu_fy/hms/Data")
 
 # 函数：创建样本信息
@@ -87,7 +90,7 @@ keep <- rowSums(counts(dds)) > 0
 dds <- dds[keep, ]
 cat("过滤后保留基因数:", nrow(dds), "\n")
 
-cat("步骤5: 数据变换和手动PCA（使用所有基因）...\n")
+cat("步骤5: 数据变换和手动PCA...\n")
 vsd <- vst(dds, blind = FALSE)
 
 # 手动进行PCA - 使用所有基因
@@ -134,8 +137,12 @@ p <- ggplot(pca_data, aes(x = PC1, y = PC2, color = condition)) +
 
 # 保存结果
 ggsave("PCA_all_genes_labels.png", p, width = 12, height = 8, dpi = 300, bg = "white")
+ggsave("PCA_all_genes_labels.pdf", p, width = 12, height = 8, bg = "white")
+ggsave("PCA_all_genes_labels.svg", p, width = 12, height = 8, bg = "white")
 write.csv(pca_data, "PCA_all_genes_with_labels.csv")
-	write.csv(sample_info, "sample_info_final.csv")
+write.csv(sample_info, "sample_info_final.csv")
+write(dds,"PCA_allgenes_filtered.csv")
+write(data.frame(GeneID = rownames(dds)), "PCA_allgenes_filtered_geneslist.csv", row.names = FALSE)
 
 cat("PCA分析完成！\n")
 cat("使用的基因数量:", nrow(vsd_matrix), "\n")
