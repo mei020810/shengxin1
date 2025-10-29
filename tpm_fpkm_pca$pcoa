@@ -2,6 +2,8 @@ vim tpm_pca_pcoa.R
 
 library(tidyverse)
 library(ggrepel)
+library(svglite)
+library(systemfonts)
 setwd("/mnt/nfs2/stu_fy/hms/Data")
 
 # 1. 读取并合并所有样本的TPM数据
@@ -111,16 +113,24 @@ pcoa_plot <- ggplot(pcoa_data, aes(x = PCoA1, y = PCoA2, color = condition)) +
   geom_text_repel(aes(label = name), size = 3) +
   xlab(paste0("PCoA1: ", percent_var_pcoa[1], "% variance")) +
   ylab(paste0("PCoA2: ", percent_var_pcoa[2], "% variance")) +
-  ggtitle(paste0("PCA Plot - TPM Data", nrow(log_tpm), " Genes")) + 
+  ggtitle(paste0("PCoA Plot - TPM Data", nrow(log_tpm), " Genes")) + 
   theme_bw() + 
   theme(plot.title = element_text(hjust = 0.5, face = "bold")) + 
   scale_color_manual(values = c(Control = "blue", Treatment = "red"))
 
 # 9. 保存
 ggsave("PCA_tpm.png", pca_plot, width = 12, height = 8, dpi = 300, bg = "white")
+ggsave("PCA_tpm.pdf", pca_plot, width = 12, height = 8, bg = "white")
+ggsave("PCA_tpm.svg", pca_plot, width = 12, height = 8, bg = "white", device = "svg")
 ggsave("PCoA_tpm.png", pcoa_plot, width = 12, height = 8, dpi = 300, bg = "white")
+ggsave("PCoA_tpm.pdf", pcoa_plot, width = 12, height = 8, bg = "white")
+ggsave("PCoA_tpm.svg", pcoa_plot, width = 12, height = 8, bg = "white", device = "svg")
 
 write.csv(tpm_data, "TPM_matrix_from_abundance.csv")
+write.csv(tpm_filtered, "TPM_pca_pcoa_filtered_genes.csv")
+# 保存基因列表
+write.csv(data.frame(GeneID = rownames(tpm_filtered)), 
+          "TPM_pca_pcoa_filtered_genes_list.csv", row.names = FALSE)
 
 cat("=== 分析完成 ===\n")
 cat("使用的基因数量:", nrow(log_tpm), "\n")
@@ -133,6 +143,8 @@ vim fpkm_pca_pcoa.R
 
 library(tidyverse)
 library(ggrepel)
+library(svglite)
+library(systemfonts)
 setwd("/mnt/nfs2/stu_fy/hms/Data")
 
 # 1. 读取并合并所有样本的FPKM数据
@@ -242,16 +254,24 @@ pcoa_plot <- ggplot(pcoa_data, aes(x = PCoA1, y = PCoA2, color = condition)) +
   geom_text_repel(aes(label = name), size = 3) +
   xlab(paste0("PCoA1: ", percent_var_pcoa[1], "% variance")) +
   ylab(paste0("PCoA2: ", percent_var_pcoa[2], "% variance")) +
-  ggtitle(paste0("PCA Plot - FPKM Data", nrow(log_fpkm), " Genes")) + 
+  ggtitle(paste0("PCoA Plot - FPKM Data", nrow(log_fpkm), " Genes")) + 
   theme_bw() + 
   theme(plot.title = element_text(hjust = 0.5, face = "bold")) + 
   scale_color_manual(values = c(Control = "blue", Treatment = "red"))
 
 # 9. 保存
 ggsave("PCA_fpkm.png", pca_plot, width = 12, height = 8, dpi = 300, bg = "white")
+ggsave("PCA_fpkm.pdf", pca_plot, width = 12, height = 8, bg = "white")
+ggsave("PCA_fpkm.svg", pca_plot, width = 12, height = 8, bg = "white", device = "svg")
 ggsave("PCoA_fpkm.png", pcoa_plot, width = 12, height = 8, dpi = 300, bg = "white")
+ggsave("PCoA_fpkm.pdf", pcoa_plot, width = 12, height = 8, bg = "white")
+ggsave("PCoA_fpkm.svg", pcoa_plot, width = 12, height = 8, bg = "white", device = "svg")
 
 write.csv(fpkm_data, "FPKM_matrix_from_abundance.csv")
+write.csv(fpkm_filtered, "FPKM_pca_pcoa_filtered_genes.csv")
+# 保存基因列表
+write.csv(data.frame(GeneID = rownames(fpkm_filtered)), 
+          "FPKM_pca_pcoa_filtered_genes_list.csv", row.names = FALSE)
 
 cat("=== 分析完成 ===\n")
 cat("使用的基因数量:", nrow(log_fpkm), "\n")
