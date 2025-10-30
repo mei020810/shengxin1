@@ -252,7 +252,7 @@ ggsave("PCoA_all_genes_labels.png", p, width = 12, height = 8, dpi = 300, bg = "
 ggsave("PCoA_all_genes_labels.pdf", p, width = 12, height = 8, bg = "white")
 ggsave("PCoA_all_genes_labels.svg", p, width = 12, height = 8, bg = "white", device = svg)
 write.csv(pcoa_data, "PCoA_all_genes_with_labels.csv")
-write.csv(data.frame(sample_info), "sample_info_final.csv")
+# write.csv(data.frame(sample_info), "sample_info_final.csv")
 write.csv(as.data.frame(counts(dds)), "PCoA_allgenes_filtered_counts.csv")
 write.csv(data.frame(GeneID = rownames(dds)), "PCoA_allgenes_filtered_geneslist.csv", row.names = FALSE)
 
