@@ -285,7 +285,11 @@ for(group in groups) {
   
   # 保存图片
   ggsave(paste0(group, "_fold_enrichment.png"), p1, width = 14, height = 16, dpi = 300)
+  ggsave(paste0(group, "_fold_enrichment.pdf"), p1, width = 14, height = 16)
+  ggsave(paste0(group, "_fold_enrichment.svg"), p1, width = 14, height = 16, device = svg)
   ggsave(paste0(group, "_generatio.png"), p4, width = 16, height = 16, dpi = 300)
+  ggsave(paste0(group, "_generatio.pdf"), p4, width = 16, height = 16)
+  ggsave(paste0(group, "_generatio.svg"), p4, width = 16, height = 16, device = svg)
   
   cat(group, "的4张图已保存完成!\n\n")
 }
@@ -382,6 +386,8 @@ for(group in groups) {
       )
     
     ggsave(paste0(group, "_dotplot.png"), p_dotplot, width = 16, height = 16, dpi = 300)
+    ggsave(paste0(group, "_dotplot.pdf"), p_dotplot, width = 16, height = 16, )
+    ggsave(paste0(group, "_dotplot.svg"), p_dotplot, width = 16, height = 16, device = svg)
     cat(group, "的气泡图保存成功!\n\n")
     
   }, error = function(e) {
@@ -408,14 +414,51 @@ for(group in groups) {
   mf_data <- read.csv(paste0(group, "_GO_Molecular_Function.csv")) %>% mutate(Category = "Molecular Function")
   cc_data <- read.csv(paste0(group, "_GO_Cellular_Component.csv")) %>% mutate(Category = "Cellular Component")
   combined_go <- bind_rows(bp_data, mf_data, cc_data)
+
+  # 2. 读取GO注释文件
+  go_annotation <- read.csv(paste0(group, "_GO_Annotation.csv"))
   
-  # 筛选数据
-  filtered_go <- combined_go %>%
+  # 3. 读取差异基因列表
+  diff_genes <- readLines(paste0(group, "_Wm82_clean_soybean_genes.txt"))  # 假设是文本文件，每行一个基因
+  
+  # 4. 保存差异基因列表（整理成表格格式）
+  diff_genes_df <- data.frame(GeneID = diff_genes, Group = group)
+  write.csv(diff_genes_df, paste0(group, "_differential_genes.csv"), row.names = FALSE)
+  cat("已保存", group, "的差异基因列表\n")
+  
+  # 5. 合并数据：为每个富集的GO术语添加具体基因
+  # 只保留差异基因对应的GO注释
+  diff_go_annotation <- go_annotation %>%
+    filter(Locus %in% diff_genes) %>%
+    rename(GO_ID = GO.ID, GO_Name = GO.Name, Gene_Ontology = Gene.Ontology)
+  
+  # 合并富集结果与基因注释
+  go_with_genes <- combined_go %>%
+    left_join(diff_go_annotation, by = c("ID" = "GO_ID")) %>%
+    group_by(ID, Description, Category, pvalue, FoldEnrichment, GeneRatio) %>%
+    summarise(
+      GeneCount = n(),
+      GeneIDs = paste(unique(Locus), collapse = "; "),  # 合并所有基因ID
+      .groups = "drop"
+    ) %>%
+    mutate(
+      GeneIDs = ifelse(GeneIDs == "NA", "", GeneIDs)  # 清理NA值
+    )
+  
+  # 6. 保存包含基因ID的GO表格
+  write.csv(go_with_genes, paste0(group, "_GO_with_geneIDs.csv"), row.names = FALSE)
+  cat("已保存包含基因ID的GO表格，包含", nrow(go_with_genes), "个GO术语\n")
+
+# 筛选数据
+  filtered_go <- go_with_genes %>%
     filter(pvalue < 0.05) %>%
     group_by(Category) %>%
     slice_min(pvalue, n = 10) %>%
     ungroup()
-  
+
+write.csv(filtered_go, paste0(group, "_GO_significant_terms.csv"), row.names = FALSE)
+  cat("已保存显著GO术语表格\n")
+
   # 数据预处理
   filtered_go <- filtered_go %>%
     mutate(
@@ -451,7 +494,12 @@ for(group in groups) {
   
   # 保存图片
   ggsave(paste0(group, "_significance_fixed.png"), p_academic, width = 14, height = 16, dpi = 300)
+  ggsave(paste0(group, "_significance_fixed.pdf"), p_academic, width = 14, height = 16,)
+  ggsave(paste0(group, "_significance_fixed.svg"), p_academic, width = 14, height = 16, device = svg)
   cat(group, "的显著性图已保存!\n\n")
 }
 cat("所有处理组的GO富集分析完成!\n")
 Rscript GO_significance.R
+
+
+
