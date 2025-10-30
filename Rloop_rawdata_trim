@@ -1,1 +1,38 @@
+# md5sum -c md5.txt 
+vim trim_rloop.sh
+#!/bin/bash
+
+# 设置最大并发任务数
+MAX_JOBS=2
+current_jobs=0
+
+for r1_file in *_R1.fastq.gz; do
+    r2_file=${r1_file/_R1/_R2}
+    sample_name=${r1_file%%_R1.fastq.gz}
+    
+    # 如果当前任务数达到上限，等待
+    while [ $(jobs -r | wc -l) -ge $MAX_JOBS ]; do
+        echo "等待空闲资源... 当前运行任务: $(jobs -r | wc -l)"
+        sleep 60
+    done
+    
+    echo "启动: $sample_name - $(date)"
+    
+    # 启动任务
+    nohup trim_galore --cores 4 -q 25 --stringency 1 --fastqc --length 35 --paired \
+        --output_dir ./trimmed_results \
+        $r1_file $r2_file > ${sample_name}_trim.log 2>&1 &
+    
+    current_jobs=$((current_jobs + 1))
+    echo "进度: $current_jobs 个任务已提交"
+    
+    sleep 5
+done
+
+echo "所有任务提交完成，等待最终完成..."
+wait
+echo "全部任务完成！时间: $(date)"
+
+chmod u+x trim_rloop.sh
+nohup ./trim_loop.sh &  #tail -f nohup.out 查看任务进程
 
