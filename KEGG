@@ -12,9 +12,42 @@ for(group in groups) {
   
   # 1. 读取数据
   kegg_data <- read.csv(paste0(group, "_KEGG_Enrichment.csv")) 
+
+  # 2. 读取KEGG注释文件
+  kegg_annotation <- read.csv(paste0(group, "_KEGG_Annotation.csv"))
+
+ # 3. 读取差异基因列表
+  diff_genes <- readLines(paste0(group, "_Wm82_clean_soybean_genes.txt"))
+
+  # 4. 保存差异基因列表
+  diff_genes_df <- data.frame(GeneID = diff_genes, Group = group)
+  write.csv(diff_genes_df, paste0(group, "_KEGG_differential_genes.csv"), row.names = FALSE)
+  cat("已保存", group, "的KEGG差异基因列表\n")
+
+  # 5. 合并KEGG注释与富集结果
+  # 只保留差异基因对应的KEGG注释
+  diff_kegg_annotation <- kegg_annotation %>%
+    filter(Locus %in% diff_genes)
   
-  # 2. 筛选数据
-  filtered_kegg <- kegg_data %>%
+  # 合并所有KEGG富集结果与基因注释
+  kegg_all_with_genes <- kegg_data %>%
+    left_join(diff_kegg_annotation, by = c("ID" = "Pathway.ID")) %>%  # 根据实际列名调整
+    group_by(ID, Description, pvalue, FoldEnrichment, GeneRatio) %>%
+    summarise(
+      GeneCount = n(),
+      GeneIDs = paste(unique(Locus), collapse = "; "),  # 合并所有基因ID
+      .groups = "drop"
+    ) %>%
+    mutate(
+      GeneIDs = ifelse(GeneIDs == "NA", "", GeneIDs)  # 清理NA值
+    )
+  
+  # 6. 保存筛选前的包含基因ID的KEGG表格（所有通路）
+  write.csv(kegg_all_with_genes, paste0(group, "_KEGG_all_with_geneIDs.csv"), row.names = FALSE)
+  cat("已保存筛选前的KEGG表格（所有通路），包含", nrow(kegg_all_with_genes), "个KEGG通路\n")
+  
+  # 7. 筛选显著KEGG通路
+  filtered_kegg <- kegg_all_with_genes %>%
     filter(pvalue < 0.05) %>%
     slice_min(pvalue, n = 15) %>%
     ungroup()
@@ -24,6 +57,10 @@ for(group in groups) {
     cat(group, "没有显著富集的pathway，跳过\n")
     next
   }
+  
+  # 8. 保存筛选后的包含基因ID的KEGG表格（显著通路）
+  write.csv(filtered_kegg, paste0(group, "_KEGG_significant_with_geneIDs.csv"), row.names = FALSE)
+  cat("已保存筛选后的KEGG表格（显著通路），包含", nrow(filtered_kegg), "个KEGG通路\n")
   
   # 数据预处理
   filtered_kegg <- filtered_kegg %>%
@@ -74,7 +111,11 @@ p1 <- ggplot(filtered_kegg,
     my_theme_with_legend
 
   ggsave(paste0(group, "_kegg_generatio.png"), p1, width = 16, height = 16, dpi = 300)
+  ggsave(paste0(group, "_kegg_generatio.pdf"), p1, width = 16, height = 16)
+  ggsave(paste0(group, "_kegg_generatio.svg"), p1, width = 16, height = 16, device = svg)
   ggsave(paste0(group, "_kegg_count_bar.png"), p_count_bar, width = 14, height = 12, dpi = 300)
+  ggsave(paste0(group, "_kegg_count_bar.pdf"), p_count_bar, width = 14, height = 12)
+  ggsave(paste0(group, "_kegg_count_bar.svg"), p_count_bar, width = 14, height = 12, device = svg)
 cat(group, "的KEGG富集图已保存!\n\n")
 }
 
