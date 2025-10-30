@@ -2,6 +2,7 @@ vim heatmap_all_genes.R
 
 library(DESeq2)
 library(pheatmap)
+library(ggplot2)
 setwd("/mnt/nfs2/stu_fy/hms/Data")
 
 # 读取数据
@@ -34,16 +35,24 @@ dds <- DESeqDataSetFromMatrix(counts_data, sample_info, ~ condition)
 dds <- estimateSizeFactors(dds)
 normalized_counts <- counts(dds, normalized = TRUE)
 
-cat("原始基因数:", nrow(normalized_counts), "\n")
-
 # 使用所有基因
+cat("原始基因数:", nrow(normalized_counts), "\n")
 normalized_counts_filtered <- normalized_counts  # 直接使用所有基因
-
 cat("用于热图的基因数量:", nrow(normalized_counts_filtered), "\n")
+
+# 保存用于热图分析的数据
+write.csv(normalized_counts_filtered, "correlation_heatmap_all_genes_counts.csv")
+write.csv(data.frame(GeneID = rownames(normalized_counts_filtered)), 
+          "correlation_heatmap_all_genes_list.csv", row.names = FALSE)
+cat("已保存所有基因的标准化counts数据和基因列表\n")
 
 # 样本间相关性热图
 cat("生成样本相关性热图（使用所有基因）...\n")
 sample_cor <- cor(normalized_counts_filtered, method = "pearson")
+
+# 保存相关性矩阵
+write.csv(sample_cor, "sample_correlation_all_genes_matrix.csv")
+cat("已保存所有基因的样本相关性矩阵\n")
 
 # 创建注释信息
 annotation_col <- data.frame(
@@ -51,6 +60,10 @@ annotation_col <- data.frame(
     Variety = sample_info$variety
 )
 rownames(annotation_col) <- colnames(normalized_counts_filtered)
+
+# 保存注释信息
+write.csv(annotation_col, "heatmap_all_genes_annotation.csv")
+cat("已保存热图注释信息\n")
 
 # 热图(默认设置)
 pheatmap(sample_cor,
@@ -63,7 +76,21 @@ pheatmap(sample_cor,
          filename = "sample_correlation_all_genes.png",
          width = 10, height = 8)
 
-cat("样本相关性热图生成完成: sample_correlation_all_genes.png\n")
+# 保存其他格式的图片
+p <- pheatmap(sample_cor,
+              clustering_distance_rows = "euclidean",
+              clustering_distance_cols = "euclidean", 
+              annotation_col = annotation_col,
+              main = paste("Sample Correlation Heatmap - All", nrow(normalized_counts_filtered), "Genes"),
+              display_numbers = TRUE,
+              number_format = "%.2f",
+              silent = TRUE)
+
+# 保存PDF和SVG格式
+ggsave("sample_correlation_all_genes.pdf", p, width = 10, height = 8)
+ggsave("sample_correlation_all_genes.svg", p, width = 10, height = 8, device = svg)
+
+cat("样本相关性热图生成完成: sample_correlation_all_genes.png/pdf/svg\n")
 cat("实际使用的基因数量:", nrow(normalized_counts_filtered), "\n")
 
 Rscript heatmap_all_genes.R
