@@ -256,9 +256,9 @@ Rscript correlation_heatmap.R
 #默认颜色——热图脚本
 vim default_correlation_heatmap.R
 
-cat("开始生成默认颜色的热图...\n")
 library(DESeq2)
 library(pheatmap)
+library(ggplot2)
 setwd("/mnt/nfs2/stu_fy/hms/Data")
 
 # 读取数据
@@ -295,16 +295,29 @@ keep <- rowSums(normalized_counts >= 10) >= 3
 normalized_counts <- normalized_counts[keep, ]
 cat("数据准备完成，开始生成热图...\n")
 
-# 样本间相关性热图（默认颜色）
+# 保存用于热图分析的数据
+write.csv(normalized_counts, "correlation_heatmap_normalized_counts.csv")
+write.csv(data.frame(GeneID = rownames(normalized_counts)), 
+          "correlation_heatmap_genes_list.csv", row.names = FALSE)
+cat("已保存热图分析用的标准化counts数据和基因列表\n")
 
 cat("生成样本相关性热图（默认颜色）...\n")
 sample_cor <- cor(normalized_counts, method = "pearson")
+
+# 保存相关性矩阵
+write.csv(sample_cor, "sample_correlation_matrix.csv")
+cat("已保存样本相关性矩阵\n")
+
 # 创建注释信息
 annotation_col <- data.frame(
     Condition = sample_info$condition,
     Variety = sample_info$variety
 )
 rownames(annotation_col) <- colnames(normalized_counts)
+
+# 保存注释信息
+write.csv(annotation_col, "heatmap_annotation_info.csv")
+cat("已保存热图注释信息\n")
 
 # 使用默认颜色的相关性热图
 pheatmap(sample_cor,
@@ -316,6 +329,21 @@ pheatmap(sample_cor,
          number_format = "%.2f",
          filename = "sample_correlation_default.png",
          width = 10, height = 8)
-cat("样本相关性热图生成完成: sample_correlation_default.png\n")
+
+# 保存其他格式的图片
+p <- pheatmap(sample_cor,
+              clustering_distance_rows = "euclidean",
+              clustering_distance_cols = "euclidean", 
+              annotation_col = annotation_col,
+              main = "Sample Correlation Heatmap (Default Colors)",
+              display_numbers = TRUE,
+              number_format = "%.2f",
+              silent = TRUE)  # 不显示，只返回对象
+
+# 保存PDF和SVG格式
+ggsave("sample_correlation_default.pdf", p, width = 10, height = 8)
+ggsave("sample_correlation_default.svg", p, width = 10, height = 8, device = svg)
+
+cat("样本相关性热图生成完成!\n")
 
 Rscript default_correlation_heatmap.R
