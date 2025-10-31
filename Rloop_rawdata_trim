@@ -36,3 +36,7 @@ echo "全部任务完成！时间: $(date)"
 chmod u+x trim_rloop.sh
 nohup ./trim_loop.sh &  #tail -f nohup.out 查看任务进程
 
+cp /mnt/nfs2/stu_fy/hms/Data/Gmax_508_Wm82/Gmax_508_v4.0.fa /data/mshe/rloopData
+# 建立bwtie的索引
+bowtie-build -f Gmax_508_v4.0.fa ./index/Gmax_508_v4.0.bw1
+# 
