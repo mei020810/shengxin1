@@ -1,4 +1,12 @@
 # md5sum -c md5.txt 
+#示例：-q 25 --stringency 1 --fastqc --length 35 --paired --trim1 原始reads 先用trim_galore 过滤
+# -q 25：质量控制;  --stringency 1：接头序列与读长序列匹配时所需的最小重叠碱基数;  --fastqc：质控报告;  --length 35：长度过滤，读长的长度小于35个碱基，则整条读长都会被丢弃;  --paired：双端模式 --trim1:从每个read的3'端修剪1个碱基
+#利用bowtie1比对
+#示例：bowtie -a -m 1 --best --strata -p 80 --chunkmbs 200  -X 800 ~/index/Gmax_508_v4.0.bw1  -1 $sample'_R1_val_1.fq.gz'  -2 $sample'_R2_val_2.fq.gz'  -S $sample'_x800.bw1.sam'
+# -a : 报告所有可比对结果; -m 1 : 限制每条序列最多1个可比对位置;  --best --strata : 报告最佳比对;  -p 80 : 使用80个CPU核心;  -X 800 : 最大插入片段大小800bp
+# https://www.jianshu.com/p/e20a3b73dcd0 比对完用picard 去重复
+
+conda activate study_rna
 vim trim_rloop.sh
 #!/bin/bash
 
@@ -20,9 +28,10 @@ for r1_file in *_R1.fastq.gz; do
     
     # 启动任务
     nohup trim_galore --cores 4 -q 25 --stringency 1 --fastqc --length 35 --paired \
+        --three_prime_clip_R1 1 --three_prime_clip_R2 1 \  #代替--trim1
         --output_dir ./trimmed_results \
         $r1_file $r2_file > ${sample_name}_trim.log 2>&1 &
-    
+
     current_jobs=$((current_jobs + 1))
     echo "进度: $current_jobs 个任务已提交"
     
@@ -34,9 +43,51 @@ wait
 echo "全部任务完成！时间: $(date)"
 
 chmod u+x trim_rloop.sh
-nohup ./trim_loop.sh &  #tail -f nohup.out 查看任务进程
+nohup ./trim_rloop.sh &  #tail -f nohup.out 查看任务进程 
 
 cp /mnt/nfs2/stu_fy/hms/Data/Gmax_508_Wm82/Gmax_508_v4.0.fa /data/mshe/rloopData
 # 建立bwtie的索引
 bowtie-build -f Gmax_508_v4.0.fa ./index/Gmax_508_v4.0.bw1
-# 
+# 比对
+vim bw1_rloop.sh
+
+#!/bin/bash
+# 设置最大并发任务数
+MAX_JOBS=2
+current_jobs=0
+INDEX_BASE="/data/mshe/rloopData/index/Gmax_508_v4.0.bw1"
+1
+for r1_file in trimmed_results/*_R1_val_1.fq.gz; do
+    # 提取样本名（去掉路径和_R1_val_1.fq.gz）
+    sample=$(basename "$r1_file" _R1_val_1.fq.gz)
+    
+    # 检查对应的R2文件是否存在
+    r2_file="trimmed_results/${sample}_R2_val_2.fq.gz"
+    if [ ! -f "$r2_file" ]; then
+        echo "警告: 找不到对应的R2文件 $r2_file，跳过"
+        continue
+    fi
+    
+    while [ $(jobs -r | wc -l) -ge $MAX_JOBS ]; do
+        echo "等待空闲资源... 当前运行任务: $(jobs -r | wc -l)"
+        sleep 60
+    done
+    echo "启动: $sample - $(date)"
+
+ nohup bowtie -a -m 1 --best --strata -p 8 --chunkmbs 200 -X 800 \
+        "$INDEX_BASE" \
+        -1 "$r1_file" \
+        -2 "$r2_file" \
+        -S "${sample}_x800.bw1.sam" > "${sample}_bw1.log" 2>&1 &
+    
+    current_jobs=$((current_jobs + 1))
+    echo "进度: $current_jobs 个任务已提交"
+    
+    sleep 5
+done 
+echo "所有任务提交完成，等待最终完成..."
+wait
+echo "全部任务完成！时间: $(date)"
+
+chmod u+x bw1_rloop.sh
+nohup ./bw1_rloop.sh > "bw1_rloop.log" 2>&1 &
