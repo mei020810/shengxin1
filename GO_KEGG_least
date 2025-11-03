@@ -50,7 +50,7 @@ for(group in groups) {
   cat("已保存包含基因ID的GO表格，包含", nrow(go_with_genes), "个GO术语\n")
 
   # 数据预处理
-  processed_go <- combined_go %>%
+  processed_go <- go_with_genes %>%
     mutate(
       Description = stringr::str_wrap(Description, width = 60),
       p.adjust = ifelse("p.adjust" %in% names(.), p.adjust, pvalue),
@@ -62,7 +62,6 @@ for(group in groups) {
 # 筛选数据
 filtered_go <- processed_go %>%
   filter(pvalue < 0.05) %>%  # 保证显著性
-  group_by(Category) %>%
   slice_max(GeneRatio_value, n = 10) %>%  # 选择GeneRatio最大的10个
   ungroup()
 
@@ -83,7 +82,7 @@ write.csv(filtered_go, paste0(group, "_GO_Generatio_max10_terms.csv"), row.names
       panel.grid.minor = element_blank(),
       panel.background = element_rect(fill = "white", colour = "black"),
       legend.position = "right",
-      panel.spacing = unit(0.5, "lines"),  # 减少分面间距
+      panel.spacing = unit(0.5, "lines")  # 减少分面间距
     )
   
   # 使用Generatio的气泡图
@@ -168,7 +167,8 @@ for(group in groups) {
   # 7. 筛选显著KEGG通路
   filtered_kegg <- processed_kegg %>%
     filter(pvalue < 0.05) %>%
-    slice_min(GeneRatio_value, n = 15) %>%
+    arrange(desc(GeneRatio_value)) %>%
+    slice_head(n = 15) %>%
     ungroup()
   
   # 如果筛选后没有数据，跳过该组
@@ -179,15 +179,25 @@ for(group in groups) {
   
   # 8. 保存筛选后的包含基因ID的KEGG表格（显著通路）
   write.csv(filtered_kegg, paste0(group, "_KEGG_Generatio_max15.csv"), row.names = FALSE)
-  cat("已保存筛选后的KEGG表格（显著通路），包含", nrow(filtered_kegg), "个KEGG通路\n")
-  
+  cat("已保存筛选后的KEGG_generatio表格（显著通路），包含", nrow(filtered_kegg), "个KEGG通路\n")
 
-  
+  filtered_kegg_count <- processed_kegg %>%
+    filter(pvalue < 0.05) %>%
+    arrange(desc(Count)) %>%
+    slice_head(n = 15) %>%
+    ungroup()
+
+  if(nrow(filtered_kegg_count) == 0) {
+    cat(group, "没有显著富集的pathway，跳过\n")
+    next
+  }
+  write.csv(filtered_kegg_count, paste0(group, "_KEGG_count_max15.csv"), row.names = FALSE)
+  cat("已保存筛选后的KEGG_count表格（显著通路），包含", nrow(filtered_kegg_count), "个KEGG通路\n")
+
   # 定义统一的theme样式
-  
   my_theme_with_legend <- theme_bw() +
     theme(
-      axis.text.y = element_text(size = 12, lineheight = 0.9, face = "bold"),
+      axis.text.y = element_text(size = 12, lineheight = 0.8, face = "bold"),
       axis.text.x = element_text(size = 12),
       axis.title = element_text(size = 16),
       plot.title = element_text(hjust = 0.5, face = "bold", size = 18),
@@ -214,25 +224,25 @@ p1 <- ggplot(filtered_kegg,
     scale_color_gradient(low = "blue", high = "red", name = "-log10(pvalue)") +  # 颜色梯度
     my_theme_with_legend
 
-  # 以Generatio为横坐标的条形图
-  p_count_bar <- ggplot(filtered_kegg, 
+  # 以counts为横坐标的条形图
+  p_count_bar <- ggplot(filtered_kegg_count, 
          aes(x = Count,  # 使用差异基因数作为横坐标
-             y = reorder(Description, GeneRatio_value),  # 按基因数排序
+             y = reorder(Description, Count),  # 按基因数排序
              fill = neg_log10_pvalue)) +  # 用颜色表示显著性
     geom_col(width = 0.7) +
     labs(x = "Number of Differentially Expressed Genes", 
          y = "KEGG Pathways",
          title = paste(group, "KEGG Enrichment"),
          fill = "-log10(p-value)") +
-    scale_fill_gradient(low = "lightblue", high = "darkred") +  # 颜色梯度
+    scale_fill_gradient(low = "blue", high = "red", name = "-log10(pvalue)") +  # 颜色梯度
     my_theme_with_legend
 
-  ggsave(paste0(group, "_kegg_generatio_max15.png"), p1, width = 16, height = 16, dpi = 300)
-  ggsave(paste0(group, "_kegg_generatio_max15.pdf"), p1, width = 16, height = 16)
-  ggsave(paste0(group, "_kegg_generatio_max15.svg"), p1, width = 16, height = 16, device = svg)
-  ggsave(paste0(group, "_kegg_bar_max15.png"), p_count_bar, width = 14, height = 12, dpi = 300)
-  ggsave(paste0(group, "_kegg_bar_max15.pdf"), p_count_bar, width = 14, height = 12)
-  ggsave(paste0(group, "_kegg_bar_max15.svg"), p_count_bar, width = 14, height = 12, device = svg)
+  ggsave(paste0(group, "_kegg_generatio_max15.png"), p1, width = 14, height = 16, dpi = 300)
+  ggsave(paste0(group, "_kegg_generatio_max15.pdf"), p1, width = 14, height = 16)
+  ggsave(paste0(group, "_kegg_generatio_max15.svg"), p1, width = 14, height = 16, device = svg)
+  ggsave(paste0(group, "_kegg_bar_max15.png"), p_count_bar, width = 14, height = 16, dpi = 300)
+  ggsave(paste0(group, "_kegg_bar_max15.pdf"), p_count_bar, width = 14, height = 16)
+  ggsave(paste0(group, "_kegg_bar_max15.svg"), p_count_bar, width = 14, height = 16, device = svg)
 cat(group, "的KEGG富集图已保存!\n\n")
 }
 
