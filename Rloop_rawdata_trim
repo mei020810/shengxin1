@@ -48,6 +48,16 @@ nohup ./trim_rloop.sh &  #tail -f nohup.out 查看任务进程
 cp /mnt/nfs2/stu_fy/hms/Data/Gmax_508_Wm82/Gmax_508_v4.0.fa /data/mshe/rloopData
 # 建立bwtie的索引
 bowtie-build -f Gmax_508_v4.0.fa ./index/Gmax_508_v4.0.bw1
+
+# 创建解压目录（boetie1只能用解压后的.fq文件）
+mkdir trimmed_results_uncompressed
+# 批量解压所有文件
+for file in trimmed_results/*.fq.gz; do
+    base=$(basename "$file" .gz)
+    echo "解压: $file"
+    gunzip -c "$file" > "trimmed_results_uncompressed/$base"
+done
+
 # 比对
 vim bw1_rloop.sh
 
@@ -56,13 +66,13 @@ vim bw1_rloop.sh
 MAX_JOBS=2
 current_jobs=0
 INDEX_BASE="/data/mshe/rloopData/index/Gmax_508_v4.0.bw1"
-1
-for r1_file in trimmed_results/*_R1_val_1.fq.gz; do
-    # 提取样本名（去掉路径和_R1_val_1.fq.gz）
-    sample=$(basename "$r1_file" _R1_val_1.fq.gz)
+
+for r1_file in trimmed_results_uncompressed/*_R1_val_1.fq; do
+    # 提取样本名（去掉路径和_R1_val_1.fq）
+    sample=$(basename "$r1_file" _R1_val_1.fq)
     
     # 检查对应的R2文件是否存在
-    r2_file="trimmed_results/${sample}_R2_val_2.fq.gz"
+    r2_file="trimmed_results_uncompressed/${sample}_R2_val_2.fq"
     if [ ! -f "$r2_file" ]; then
         echo "警告: 找不到对应的R2文件 $r2_file，跳过"
         continue
@@ -74,11 +84,11 @@ for r1_file in trimmed_results/*_R1_val_1.fq.gz; do
     done
     echo "启动: $sample - $(date)"
 
- nohup bowtie -a -m 1 --best --strata -p 8 --chunkmbs 200 -X 800 \
+ nohup bowtie -a -m 1 --best --strata -p 10 --chunkmbs 200 -X 800 \
         "$INDEX_BASE" \
         -1 "$r1_file" \
         -2 "$r2_file" \
-        -S "${sample}_x800.bw1.sam" > "${sample}_bw1.log" 2>&1 &
+        -S "/data/mshe/rloopData/sam/${sample}_x800.bw1.sam" > "/data/mshe/rloopData/sam/${sample}_bw1.log" 2>&1 &
     
     current_jobs=$((current_jobs + 1))
     echo "进度: $current_jobs 个任务已提交"
@@ -91,3 +101,11 @@ echo "全部任务完成！时间: $(date)"
 
 chmod u+x bw1_rloop.sh
 nohup ./bw1_rloop.sh > "bw1_rloop.log" 2>&1 &
+# 提取所有样本的比对率进行对比
+for log_file in sam/*_bw1.log; do
+    sample=$(basename "$log_file" _bw1.log)
+    alignment_rate=$(grep "reads with at least one" "$log_file" | awk '{print $10}' | tr -d '()%')
+    total_reads=$(grep "reads processed" "$log_file" | awk '{print $4}')
+    echo "$sample | 总序列: $total_reads | 比对率: ${alignment_rate}%"
+done | sort -t'|' -k5 -nr
+
