@@ -109,3 +109,53 @@ for log_file in sam/*_bw1.log; do
     echo "$sample | 总序列: $total_reads | 比对率: ${alignment_rate}%"
 done | sort -t'|' -k5 -nr
 
+# sam → bam
+vim sam_change_bam.sh
+#!/bin/bash
+MAX_JOBS=2
+current_jobs=0
+# 创建输出目录
+mkdir -p /data/mshe/rloopData/bam
+echo "=== 开始批量处理 SAM 文件 ==="
+echo "开始时间: $(date)"
+
+for sam_file in sam/*.bw1.sam; do
+    # 等待资源
+    while [ $(jobs -r | wc -l) -ge $MAX_JOBS ]; do
+        echo "等待空闲资源... 当前运行任务: $(jobs -r | wc -l)"
+        sleep 60
+    done
+    
+    sample=$(basename "$sam_file" _x800.bw1.sam)
+    echo "启动处理: $sample - $(date)"
+    
+    # 在子shell中运行整个处理流程
+    nohup bash -c "
+        echo '  - SAM转BAM: $sample'
+        samtools sort -@ 10 '$sam_file' -o '/data/mshe/rloopData/bam/${sample}_x800.sorted.bam'
+        
+        echo '  - 建立索引: $sample'
+        samtools index '/data/mshe/rloopData/bam/${sample}_x800.sorted.bam'
+        
+        echo '  - Picard去重: $sample'
+        picard MarkDuplicates \
+            REMOVE_DUPLICATES=true \
+            MAX_FILE_HANDLES=800 \
+            VALIDATION_STRINGENCY=LENIENT \
+            I='/data/mshe/rloopData/bam/${sample}.sorted.bam' \
+            O='/data/mshe/rloopData/bam/${sample}.picard.bam' \
+            M='/data/mshe/rloopData/bam/${sample}.picard.log'
+        
+        echo '  - 完成: $sample'
+    " > "/data/mshe/rloopData/bam/${sample}_processing.log" 2>&1 &
+    
+    current_jobs=$((current_jobs + 1))
+    echo "进度: $current_jobs 个任务已提交 - 样本: $sample"
+    sleep 10
+done 
+
+echo "所有任务提交完成，等待最终完成..."
+wait
+echo "=== 全部任务完成！ ==="
+echo "完成时间: $(date)"
+echo "总处理样本数: $current_jobs"
