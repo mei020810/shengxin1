@@ -1,0 +1,110 @@
+vim GO_Generatio_dotplot.R
+
+library(dplyr)
+library(ggplot2)
+library(stringr)
+# 定义处理组列表
+groups <- c("HC22", "HH43", "HX3", "ZH13")
+
+for(group in groups) {
+  cat("正在处理:", group, "\n")
+  
+  # 读取和合并数据
+  bp_data <- read.csv(paste0(group, "_GO_Biological_Process.csv")) %>% mutate(Category = "Biological Process")
+  mf_data <- read.csv(paste0(group, "_GO_Molecular_Function.csv")) %>% mutate(Category = "Molecular Function")
+  cc_data <- read.csv(paste0(group, "_GO_Cellular_Component.csv")) %>% mutate(Category = "Cellular Component")
+  combined_go <- bind_rows(bp_data, mf_data, cc_data)
+
+  # 2. 读取GO注释文件
+  go_annotation <- read.csv(paste0(group, "_GO_Annotation.csv"))
+  
+  # 3. 读取差异基因列表
+  diff_genes <- readLines(paste0(group, "_Wm82_clean_soybean_genes.txt"))  # 假设是文本文件，每行一个基因
+  
+  # 4. 保存差异基因列表（整理成表格格式）
+  diff_genes_df <- data.frame(GeneID = diff_genes, Group = group)
+  write.csv(diff_genes_df, paste0(group, "_differential_genes.csv"), row.names = FALSE)
+  cat("已保存", group, "的差异基因列表\n")
+  
+  # 5. 合并数据：为每个富集的GO术语添加具体基因
+  # 只保留差异基因对应的GO注释
+  diff_go_annotation <- go_annotation %>%
+    filter(Locus %in% diff_genes) %>%
+    rename(GO_ID = GO.ID, GO_Name = GO.Name, Gene_Ontology = Gene.Ontology)
+  
+  # 合并富集结果与基因注释
+  go_with_genes <- combined_go %>%
+    left_join(diff_go_annotation, by = c("ID" = "GO_ID")) %>%
+    group_by(ID, Description, Category, pvalue, FoldEnrichment, GeneRatio) %>%
+    summarise(
+      GeneCount = n(),
+      GeneIDs = paste(unique(Locus), collapse = "; "),  # 合并所有基因ID
+      .groups = "drop"
+    ) %>%
+    mutate(
+      GeneIDs = ifelse(GeneIDs == "NA", "", GeneIDs)  # 清理NA值
+    )
+  
+  # 6. 保存包含基因ID的GO表格
+  write.csv(go_with_genes, paste0(group, "_GO_with_geneIDs.csv"), row.names = FALSE)
+  cat("已保存包含基因ID的GO表格，包含", nrow(go_with_genes), "个GO术语\n")
+
+  # 数据预处理
+  processed_go <- combined_go %>%
+    mutate(
+      Description = stringr::str_wrap(Description, width = 60),
+      p.adjust = ifelse("p.adjust" %in% names(.), p.adjust, pvalue),
+      neg_log10_pvalue = -log10(pvalue),
+      Count = as.numeric(sapply(strsplit(GeneRatio, "/"), function(x) x[1])),
+      GeneRatio_value = sapply(strsplit(GeneRatio, "/"), function(x) as.numeric(x[1]) / as.numeric(x[2]))
+    )
+
+# 筛选数据
+filtered_go <- processed_go %>%
+  filter(pvalue < 0.05) %>%  # 保证显著性
+  group_by(Category) %>%
+  slice_max(GeneRatio_value, n = 10) %>%  # 选择GeneRatio最大的10个
+  ungroup()
+
+write.csv(filtered_go, paste0(group, "_GO_Generatio_max10_terms.csv"), row.names = FALSE)
+  cat("已保存显著GO术语表格\n")
+
+  # 定义theme
+  my_theme <- theme_bw() +
+    theme(
+      axis.text.y = element_text(size = 12, lineheight = 0.8, face = "bold"),
+      axis.text.x = element_text(size = 12),
+      axis.title = element_text(size = 16),
+      plot.title = element_text(hjust = 0.5, face = "bold", size = 18),
+      plot.margin = margin(1, 1, 1, 4, "cm"),
+      strip.background = element_rect(fill = "lightgrey"),
+      strip.text = element_text(face = "bold", size = 12),
+      panel.grid.major = element_line(color = "grey90", size = 0.2),
+      panel.grid.minor = element_blank(),
+      panel.background = element_rect(fill = "white", colour = "black"),
+      legend.position = "right",
+      panel.spacing = unit(0.5, "lines"),  # 减少分面间距
+    )
+  
+  # 使用Generatio的气泡图
+  p_academic <- ggplot(filtered_go, 
+         aes(x = GeneRatio_value,
+             y = reorder(Description, GeneRatio_value),
+             size = Count,color = neg_log10_pvalue)) + # 点的大小表示基因数量，点的颜色表示pvalue显著性
+    geom_point(alpha = 0.7) +  #点的不透明度
+    scale_color_gradient(low = "blue", high = "red", name = "-log10(pvalue)") +
+    scale_size_continuous(range = c(3, 8), name = "Gene Count") +  # 控制点的大小范围
+    facet_grid(Category ~ ., scales = "free_y", space = "free_y") +
+    labs(x = "Gene Ratio", y = "GO Terms",
+    title = paste(group, "GO Enrichment Analysis")) +
+    my_theme 
+  
+  # 保存图片
+  ggsave(paste0(group, "_Generatio_max10.png"), p_academic, width = 14, height = 16, dpi = 300)
+  ggsave(paste0(group, "_Generatio_max10.pdf"), p_academic, width = 14, height = 16,)
+  ggsave(paste0(group, "_Generatio_max10.svg"), p_academic, width = 14, height = 16, device = svg)
+  cat(group, "的显著性图已保存!\n\n")
+}
+cat("所有处理组的GO富集分析完成!\n")
+Rscript GO_Generatio_dotplot.R
+
