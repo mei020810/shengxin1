@@ -180,44 +180,48 @@ nohup ./bw2_rloop.sh > "bw2_rloop.log" 2>&1 &    # tail -f bw2_rloop.log
 
 
 # sam → bam
-vim sam_change_bam.sh
+vim sam_to_bam_picard.sh
 #!/bin/bash
 MAX_JOBS=2
 current_jobs=0
 # 创建输出目录
 mkdir -p /data/mshe/rloopData/bam
+mkdir -p /data/mshe/rloopData/picard
+mkdir -p /data/mshe/rloopData/logs
+
 echo "=== 开始批量处理 SAM 文件 ==="
 echo "开始时间: $(date)"
 
-for sam_file in sam/*.bw1.sam; do
+for sam_file in sam/*.bw2.sam; do
     # 等待资源
     while [ $(jobs -r | wc -l) -ge $MAX_JOBS ]; do
         echo "等待空闲资源... 当前运行任务: $(jobs -r | wc -l)"
         sleep 60
     done
     
-    sample=$(basename "$sam_file" _x800.bw1.sam)
+    sample=$(basename "$sam_file" _x800.bw2.sam)
     echo "启动处理: $sample - $(date)"
     
     # 在子shell中运行整个处理流程
     nohup bash -c "
-        echo '  - SAM转BAM: $sample'
-        samtools sort -@ 10 '$sam_file' -o '/data/mshe/rloopData/bam/${sample}_x800.sorted.bam'
-        
+        echo '  - SAM转BAM并排序: $sample'
+        samtools sort -@ 8 '$sam_file' -o '/data/mshe/rloopData/bam/${sample}_x800.sorted.bam'
+
         echo '  - 建立索引: $sample'
         samtools index '/data/mshe/rloopData/bam/${sample}_x800.sorted.bam'
-        
-        echo '  - Picard去重: $sample'
+
+        echo '  - Picard标记重复: $sample'
         picard MarkDuplicates \
             REMOVE_DUPLICATES=true \
+            CREATE_INDEX=true \
             MAX_FILE_HANDLES=800 \
             VALIDATION_STRINGENCY=LENIENT \
-            I='/data/mshe/rloopData/bam/${sample}.sorted.bam' \
-            O='/data/mshe/rloopData/bam/${sample}.picard.bam' \
-            M='/data/mshe/rloopData/bam/${sample}.picard.log'
+            I='/data/mshe/rloopData/bam/${sample}_x800.sorted.bam' \
+            O='/data/mshe/rloopData/picard/${sample}_picard.bam' \
+            M='/data/mshe/rloopData/picard/${sample}_picard_metrics.txt'
         
         echo '  - 完成: $sample'
-    " > "/data/mshe/rloopData/bam/${sample}_processing.log" 2>&1 &
+    " > "/data/mshe/rloopData/logs/${sample}_sam_bam_picard.log" 2>&1 &
     
     current_jobs=$((current_jobs + 1))
     echo "进度: $current_jobs 个任务已提交 - 样本: $sample"
@@ -229,3 +233,32 @@ wait
 echo "=== 全部任务完成！ ==="
 echo "完成时间: $(date)"
 echo "总处理样本数: $current_jobs"
+
+chmod u+x sam_to_bam_picard.sh
+nohup ./sam_to_bam_picard.sh > sam_to_bam_picard.log 2>&1 &
+
+# 利用samtools分析比对率
+vim samtools_flagstat_analysis.sh
+#!/bin/bash
+mkdir -p /data/mshe/rloopData/alignment_stats
+echo "=== 开始BAM文件统计分析 ==="
+echo "开始时间: $(date)"
+for bam_file in /data/mshe/rloopData/bam/*.sorted.bam; do
+    sample=$(basename "$bam_file" _x800.sorted.bam)
+    echo "=== 分析 $sample ==="
+samtools flagstat "$bam_file" > "/data/mshe/rloopData/alignment_stats/${sample}_flagstat.txt"
+# 提取关键信息
+    total_reads=$(grep "in total" "/data/mshe/rloopData/alignment_stats/${sample}_flagstat.txt" | awk '{print $1}')
+    mapped_rate=$(grep "mapped" "/data/mshe/rloopData/alignment_stats/${sample}_flagstat.txt" | awk '{print $5}' | head -1)
+    properly_paired=$(grep "properly paired" "/data/mshe/rloopData/alignment_stats/${sample}_flagstat.txt" | awk '{print $6}')
+    if [ -n "$total_reads" ] && [ -n "$mapped_rate" ]; then
+        echo "$sample: 总reads=$total_reads, 比对率=$mapped_rate, 正确配对=$properly_paired"
+    else
+        echo "$sample: 统计信息提取失败"
+    fi
+done
+echo "=== 分析完成 ==="
+echo "结束时间: $(date)"
+
+chmod u+x samtools_flagstat_analysis.sh
+nohup ./samtools_flagstat_analysis.sh > samtools_flagstat_analysis.log  2>&1 &
