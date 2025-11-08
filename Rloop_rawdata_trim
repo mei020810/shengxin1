@@ -3,8 +3,12 @@
 # -q 25：质量控制;  --stringency 1：接头序列与读长序列匹配时所需的最小重叠碱基数;  --fastqc：质控报告;  --length 35：长度过滤，读长的长度小于35个碱基，则整条读长都会被丢弃;  --paired：双端模式 --trim1:从每个read的3'端修剪1个碱基
 #利用bowtie1比对
 #示例：bowtie -a -m 1 --best --strata -p 80 --chunkmbs 200  -X 800 ~/index/Gmax_508_v4.0.bw1  -1 $sample'_R1_val_1.fq.gz'  -2 $sample'_R2_val_2.fq.gz'  -S $sample'_x800.bw1.sam'
-# -a : 报告所有可比对结果; -m 1 : 限制每条序列最多1个可比对位置;  --best --strata : 报告最佳比对;  -p 80 : 使用80个CPU核心;  -X 800 : 最大插入片段大小800bp
+# -a : 报告所有可比对结果; -m 1 : 限制每条序列最多1个可比对位置;  --best --strata : 报告最佳比对;  -p 80 : 使用80个CPU核心;  -X 800 : 建库时超声波打断的最大插入片段大小800bp
 # https://www.jianshu.com/p/e20a3b73dcd0 比对完用picard 去重复
+# 分离wR-loop和cR-loop：perl -anle 'print if (($F[1]==99)||($F[1]==147))'  $sample'_x800.bw1.sam'  > $sample'_x800.bw1.cRloop.sam' ; perl -anle 'print if (($F[1]==83)||($F[1]==163))'  $sample'_x800.bw1.sam'  > $sample'_x800.bw1.wRloop.sam'
+#perl 是 Perl 语言解释器(linux默认安装)，-anle 是 Perl 命令行选项组合，核心用于 “逐行分割文本→按列筛选→规范输出”；$F[1] 对应 SAM 的第 2 列（FLAG 值）；将筛选后的行保存到目标 SAM 文件
+# 进行 峰calling ：macs2 callpeak -t $sample'_x800.bw1.sam'  --extsize 200 -q 0.05 --nomodel --SPMR -f SAM -g 1e+9 -B -n $sample'_x800.bw1.nomodel.macs2'；macs2 callpeak -t $sample'_x800.bw1.wRloop.sam'  --extsize 200 -q 0.05 --nomodel --SPMR -f SAM -g 1e+9 -B -n $sample'_x800.bw1.wRloop.nomodel.macs2'；macs2 callpeak -t $sample'_x800.bw1.cRloop.sam'  --extsize 200 -q 0.05 --nomodel --SPMR -f SAM -g 1e+9 -B -n $sample'_x800.bw1.cRloop.nomodel.macs2'
+#
 
 conda activate study_rna
 vim trim_rloop.sh
@@ -237,7 +241,7 @@ echo "总处理样本数: $current_jobs"
 chmod u+x sam_to_bam_picard.sh
 nohup ./sam_to_bam_picard.sh > sam_to_bam_picard.log 2>&1 &
 
-# 利用samtools分析比对率
+# 利用samtools分析比对率(去重前)
 vim samtools_flagstat_analysis.sh
 #!/bin/bash
 mkdir -p /data/mshe/rloopData/alignment_stats
@@ -262,3 +266,84 @@ echo "结束时间: $(date)"
 
 chmod u+x samtools_flagstat_analysis.sh
 nohup ./samtools_flagstat_analysis.sh > samtools_flagstat_analysis.log  2>&1 &
+
+# 利用samtools去重后查看比对率
+vim samtools_flagstat_analysis_picard.sh
+#!/bin/bash
+mkdir -p /data/mshe/rloopData/picard/alignment_stats
+echo "=== 开始BAM文件统计分析 ==="
+echo "开始时间: $(date)"
+for bam_file in /data/mshe/rloopData/picard/*_picard.bam; do
+    sample=$(basename "$bam_file" _picard.bam)
+    echo "=== 分析 $sample ==="
+samtools flagstat "$bam_file" > "/data/mshe/rloopData/picard/alignment_stats/${sample}_flagstat_picard.txt"
+# 提取关键信息
+    total_reads=$(grep "in total" "/data/mshe/rloopData/picard/alignment_stats/${sample}_flagstat_picard.txt" | awk '{print $1}')
+    mapped_rate=$(grep "mapped" "/data/mshe/rloopData/picard/alignment_stats/${sample}_flagstat_picard.txt" | awk '{print $5}' | head -1)
+    properly_paired=$(grep "properly paired" "/data/mshe/rloopData/picard/alignment_stats/${sample}_flagstat_picard.txt" | awk '{print $6}')
+    if [ -n "$total_reads" ] && [ -n "$mapped_rate" ]; then
+        echo "$sample: 总reads=$total_reads, 比对率=$mapped_rate, 正确配对=$properly_paired"
+    else
+        echo "$sample: 统计信息提取失败"
+    fi
+done
+echo "=== 分析完成 ==="
+echo "结束时间: $(date)"
+
+chmod u+x samtools_flagstat_analysis_picard.sh
+nohup ./samtools_flagstat_analysis_picard.sh > samtools_flagstat_analysis_picard.log  2>&1 &
+
+# 比较去重前后的比对率
+echo "样本 | 去重前比对率 | 去重后比对率 | 总reads减少"
+echo "------|-------------|-------------|------------"
+
+for stats_file in /data/mshe/rloopData/picard/alignment_stats/*_flagstat_picard.txt; do
+    sample=$(basename "$stats_file" _flagstat_picard.txt)
+    
+    # 去重后数据
+    post_total=$(grep "in total" "$stats_file" | awk '{print $1}')
+    post_mapped=$(grep "mapped" "$stats_file" | awk '{print $5}' | head -1)
+    # 去重前数据
+    pre_file="/data/mshe/rloopData/alignment_stats/${sample}_flagstat.txt"
+    if [ -f "$pre_file" ]; then
+        pre_total=$(grep "in total" "$pre_file" | awk '{print $1}')
+        pre_mapped=$(grep "mapped" "$pre_file" | awk '{print $5}' | head -1)
+        reduction=$(echo "scale=1; (1 - $post_total / $pre_total) * 100" | bc)
+        echo "$sample | $pre_mapped | $post_mapped | ${reduction}%"
+    else
+        echo "$sample | - | $post_mapped | -"
+    fi
+done
+
+# 用bw区分wR-loop和cR-loop
+vim strand_specific.sh
+
+#!/bin/bash
+mkdir -p /data/mshe/rloopData/strand_specific
+echo "=== 开始链特异性筛选 ==="
+echo "开始时间: $(date)"
+
+for bam_path in /data/mshe/rloopData/picard/*_picard.bam; do
+    sample=$(basename "$bam_path" _picard.bam)
+
+        echo "开始处理: $sample"
+        echo "BAM文件: $bam_path"
+        
+    echo "cRloop筛选..."
+        samtools view -h "$bam_path" | \
+        perl -anle 'print if (($F[1]==99)||($F[1]==147))' > "/data/mshe/rloopData/strand_specific/${sample}_cRloop.sam"
+    echo "wRloop筛选..."
+        samtools view -h "$bam_path" | \
+        perl -anle 'print if (($F[1]==83)||($F[1]==163))' > "/data/mshe/rloopData/strand_specific/${sample}_wRloop.sam"
+
+        # 统计筛选结果
+        cRloop_count=$(grep -c '^[^@]' "/data/mshe/rloopData/strand_specific/${sample}_cRloop.sam")
+        wRloop_count=$(grep -c '^[^@]' "/data/mshe/rloopData/strand_specific/${sample}_wRloop.sam")
+    echo "完成: $sample - cRloop: $cRloop_count reads, wRloop: $wRloop_count reads"
+    echo "----------------------------------------"
+done 
+echo "全部任务完成！时间: $(date)"
+
+chmod u+x strand_specific.sh
+./strand_specific.sh
+
