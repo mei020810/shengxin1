@@ -331,14 +331,14 @@ for bam_path in /data/mshe/rloopData/picard/*_picard.bam; do
         
     echo "cRloop筛选..."
         samtools view -h "$bam_path" | \
-        perl -anle 'print if (($F[1]==99)||($F[1]==147))' > "/data/mshe/rloopData/strand_specific/${sample}_cRloop.sam"
+        perl -anle 'print if (($F[1]==99)||($F[1]==147))' > "/data/mshe/rloopData/strand_specific/${sample}_x800_cRloop.sam"
     echo "wRloop筛选..."
         samtools view -h "$bam_path" | \
-        perl -anle 'print if (($F[1]==83)||($F[1]==163))' > "/data/mshe/rloopData/strand_specific/${sample}_wRloop.sam"
+        perl -anle 'print if (($F[1]==83)||($F[1]==163))' > "/data/mshe/rloopData/strand_specific/${sample}_x800_wRloop.sam"
 
         # 统计筛选结果
-        cRloop_count=$(grep -c '^[^@]' "/data/mshe/rloopData/strand_specific/${sample}_cRloop.sam")
-        wRloop_count=$(grep -c '^[^@]' "/data/mshe/rloopData/strand_specific/${sample}_wRloop.sam")
+        cRloop_count=$(grep -c '^[^@]' "/data/mshe/rloopData/strand_specific/${sample}_x800_cRloop.sam")
+        wRloop_count=$(grep -c '^[^@]' "/data/mshe/rloopData/strand_specific/${sample}_x800_wRloop.sam")
     echo "完成: $sample - cRloop: $cRloop_count reads, wRloop: $wRloop_count reads"
     echo "----------------------------------------"
 done 
@@ -347,3 +347,40 @@ echo "全部任务完成！时间: $(date)"
 chmod u+x strand_specific.sh
 ./strand_specific.sh
 
+vim rename_files.sh
+#!/bin/bash
+echo "=== 安全批量重命名 ==="
+
+# 1. Picard BAM文件
+echo "--- 处理Picard BAM文件 ---"
+for file in /data/mshe/rloopData/picard/*_picard.bam; do
+    if [ -f "$file" ] && [[ "$file" != *"_x800_picard.bam" ]]; then
+        new_file="${file/_picard.bam/_x800_picard.bam}"
+        echo "$(basename "$file") -> $(basename "$new_file")"
+        mv "$file" "$new_file"
+    fi
+done
+
+# 2. cRloop文件
+echo "--- 处理cRloop文件 ---"
+for file in /data/mshe/rloopData/strand_specific/*_cRloop.sam; do
+    if [ -f "$file" ] && [[ "$file" != *"_x800_cRloop.sam" ]]; then
+        new_file="${file/_cRloop.sam/_x800_cRloop.sam}"
+        echo "$(basename "$file") -> $(basename "$new_file")"
+        mv "$file" "$new_file"
+    fi
+done
+
+# 3. wRloop文件
+echo "--- 处理wRloop文件 ---"
+for file in /data/mshe/rloopData/strand_specific/*_wRloop.sam; do
+    if [ -f "$file" ] && [[ "$file" != *"_x800_wRloop.sam" ]]; then
+        new_file="${file/_wRloop.sam/_x800_wRloop.sam}"
+        echo "$(basename "$file") -> $(basename "$new_file")"
+        mv "$file" "$new_file"
+    fi
+done
+
+echo "=== 重命名完成 ==="
+chmod +x rename_files.sh
+./rename_files.sh
