@@ -315,7 +315,7 @@ for stats_file in /data/mshe/rloopData/picard/alignment_stats/*_flagstat_picard.
     fi
 done
 
-# 用bw区分wR-loop和cR-loop
+# 用bw区分wR-loop和cR-loop,注意不要重复添加x800标记
 vim strand_specific.sh
 
 #!/bin/bash
