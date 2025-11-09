@@ -399,10 +399,32 @@ for bam_file in /data/mshe/rloopData/picard/*_x800_picard.bam; do
     echo "处理样本：$sample"
     macs3 callpeak -t "$bam_file" \
     --extsize 200 -q 0.05 \
+    --nomodel --SPMR -f BAM \
+    -g 1e+9 -B \
+    -n "/data/mshe/rloopData/macs3_results/${sample}_x800_bw2_nomodel.macs3"
+done
+echo "2. wRloop peak calling..."
+for wRloop_file in /data/mshe/rloopData/strand_specific/*_x800_wRloop.sam; do
+    sample=$(basename "$wRloop_file" _x800_wRloop.sam)
+    echo "处理样本：$sample"
+    macs3 callpeak -t "$wRloop_file" \
+    --extsize 200 -q 0.05 \
     --nomodel --SPMR -f SAM \
     -g 1e+9 -B \
-    -n "${sample}_x800.bw2.nomodel.macs3.bam"
+    -n "/data/mshe/rloopData/macs3_results/${sample}_x800_bw2_wRloop_nomodel.macs3"
 done
+echo "3. cRloop peak calling..."
+for cRloop_file in /data/mshe/rloopData/strand_specific/*_x800_cRloop.sam; do
+    sample=$(basename "$cRloop_file" _x800_cRloop.sam)
+    echo "处理样本：$sample"
+    macs3 callpeak -t "$cRloop_file" \
+    --extsize 200 -q 0.05 \
+    --nomodel --SPMR -f SAM \
+    -g 1e+9 -B \
+    -n "/data/mshe/rloopData/macs3_results/${sample}_x800_bw2_cRloop_nomodel.macs3"
+done
+echo "=== MACS3 Peak Calling 完成 ==="
+echo "结束时间: $(date)"
 
-for wRloop_file in /data/mshe/rloopData/strand_specific/
-
+chmod u+x macs3_peak_calling.sh
+./macs3_peak_calling.sh 
