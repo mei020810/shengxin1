@@ -8,7 +8,7 @@
 # 分离wR-loop和cR-loop：perl -anle 'print if (($F[1]==99)||($F[1]==147))'  $sample'_x800.bw1.sam'  > $sample'_x800.bw1.cRloop.sam' ; perl -anle 'print if (($F[1]==83)||($F[1]==163))'  $sample'_x800.bw1.sam'  > $sample'_x800.bw1.wRloop.sam'
 #perl 是 Perl 语言解释器(linux默认安装)，-anle 是 Perl 命令行选项组合，核心用于 “逐行分割文本→按列筛选→规范输出”；$F[1] 对应 SAM 的第 2 列（FLAG 值）；将筛选后的行保存到目标 SAM 文件
 # 进行 峰calling ：macs2 callpeak -t $sample'_x800.bw1.sam'  --extsize 200 -q 0.05 --nomodel --SPMR -f SAM -g 1e+9 -B -n $sample'_x800.bw1.nomodel.macs2'；macs2 callpeak -t $sample'_x800.bw1.wRloop.sam'  --extsize 200 -q 0.05 --nomodel --SPMR -f SAM -g 1e+9 -B -n $sample'_x800.bw1.wRloop.nomodel.macs2'；macs2 callpeak -t $sample'_x800.bw1.cRloop.sam'  --extsize 200 -q 0.05 --nomodel --SPMR -f SAM -g 1e+9 -B -n $sample'_x800.bw1.cRloop.nomodel.macs2'
-#
+# macs3参数相同，-t输入文件，--extsize 需匹配建库时的插入片段长度（可用picard的CollectInsertSizeMetrics统计）200为通用值；-q是峰的显著性阈值-q 0.05表示仅保留假阳性率＜5% 的峰；nomodel不构建模型，手动指定--extsize时必用；--spmr输出“每百万reads的信号强度”，消除不同样本测序的差异；-f SAM明确输入文件为sam格式；-g指定参考基因组总长度；-B输出 bigWig 格式的信号轨道文件，用于 IGV 可视化；-n指定所有输出文件的前缀
 
 conda activate study_rna
 vim trim_rloop.sh
@@ -384,3 +384,13 @@ done
 echo "=== 重命名完成 ==="
 chmod +x rename_files.sh
 ./rename_files.sh
+
+vim macs3_peak_calling.sh
+#!/bin/bash
+echo "=== 开始MACS2 Peak Calling ==="
+echo "开始时间: $(date)"
+for sample_file in /data/mshe/rloopData/picard/*-IP_x800_picard.bam; do
+    sample=$(basename "$sample_file" -IP_x800_picard.bam)
+    echo "处理样本：$sample"
+    macs3 callpeak -t "${sample}_x800_picard.bam" \
+    -c 
