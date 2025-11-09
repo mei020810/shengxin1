@@ -1,0 +1,66 @@
+vim bw2_x1000_rloop.sh
+#!/bin/bash
+# 设置最大并发任务数
+MAX_JOBS=2
+current_jobs=0
+INDEX_BASE="/data/mshe/rloopData/index/Gmax_508_v4.0.bw2"
+mkdir -p /data/mshe/rloopData/sam_x1000
+
+echo "=== 开始Bowtie2比对分析 ==="
+echo "开始时间: $(date)"
+echo "索引: $INDEX_BASE"
+echo "最大并发任务: $MAX_JOBS"
+
+for r1_file in trimmed_results/*_R1_val_1.fq.gz; do
+    # 提取样本名（去掉路径和_R1_val_1.fq.gz）
+    sample=$(basename "$r1_file" _R1_val_1.fq.gz)
+    
+    # 检查对应的R2文件是否存在
+    r2_file="trimmed_results/${sample}_R2_val_2.fq.gz"
+    if [ ! -f "$r2_file" ]; then
+        echo "警告: 找不到对应的R2文件 $r2_file，跳过"
+        continue
+    fi
+    
+    while [ $(jobs -r | wc -l) -ge $MAX_JOBS ]; do
+        echo "等待空闲资源... 当前运行任务: $(jobs -r | wc -l)"
+        sleep 60
+    done
+    echo "启动: $sample - $(date)"
+
+nohup bowtie2 --end-to-end --no-discordant --no-mixed \
+        -p 8 \
+        -X 1000 \
+        -x "$INDEX_BASE" \
+        -1 "$r1_file" \
+        -2 "$r2_file" \
+        -S "/data/mshe/rloopData/sam_x1000/${sample}_x1000.bw2.sam" > "/data/mshe/rloopData/sam_x1000/${sample}_x1000_bw2.log" 2>&1 &
+
+    current_jobs=$((current_jobs + 1))
+    echo "进度: $current_jobs 个任务已提交"
+    
+    sleep 5
+done 
+echo "所有任务提交完成，等待最终完成..."
+wait
+
+echo "=== 最终统计结果 ==="
+
+for log_file in /data/mshe/rloopData/sam_x1000/*_x1000_bw2.log; do
+    if [ -f "$log_file" ]; then
+        sample=$(basename "$log_file" _bw2.log)
+        alignment_rate=$(grep "overall alignment rate" "$log_file" | awk '{print $1}' | tr -d '%')
+        total_reads=$(grep "reads; of these:" "$log_file" | awk '{print $1}')
+        
+        if [ -n "$alignment_rate" ] && [ -n "$total_reads" ]; then
+            echo "$sample | 总序列: $total_reads | 比对率: ${alignment_rate}%"
+        else
+            echo "$sample | 统计信息提取失败"
+        fi
+    fi
+done | sort -t'|' -k5 -nr
+
+echo "全部任务完成！时间: $(date)"
+
+chmod u+x bw2_x1000_rloop.sh
+nohup ./bw2_x1000_rloop.sh > "bw2_x1000_rloop.log" 2>&1 &    # tail -f bw2_x1000_rloop.log
