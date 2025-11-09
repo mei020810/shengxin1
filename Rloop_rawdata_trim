@@ -387,10 +387,22 @@ chmod +x rename_files.sh
 
 vim macs3_peak_calling.sh
 #!/bin/bash
-echo "=== 开始MACS2 Peak Calling ==="
+mkdir -p /data/mshe/rloopData/macs3_results
+
+echo "=== 开始MACS3 Peak Calling ==="
 echo "开始时间: $(date)"
-for sample_file in /data/mshe/rloopData/picard/*-IP_x800_picard.bam; do
-    sample=$(basename "$sample_file" -IP_x800_picard.bam)
+
+# 1. 全数据peak calling
+echo "1. 全数据peak calling..."
+for bam_file in /data/mshe/rloopData/picard/*_x800_picard.bam; do
+    sample=$(basename "$bam_file" _x800_picard.bam)
     echo "处理样本：$sample"
-    macs3 callpeak -t "${sample}_x800_picard.bam" \
-    -c 
+    macs3 callpeak -t "$bam_file" \
+    --extsize 200 -q 0.05 \
+    --nomodel --SPMR -f SAM \
+    -g 1e+9 -B \
+    -n "${sample}_x800.bw2.nomodel.macs3.bam"
+done
+
+for wRloop_file in /data/mshe/rloopData/strand_specific/
+
