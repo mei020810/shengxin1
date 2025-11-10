@@ -471,3 +471,41 @@ echo "结束时间: $(date)"
 
 chmod u+x macs3_peak_calling.sh
 nohup ./macs3_peak_calling.sh > macs3_peak_calling.log 2>&1 &
+
+#wRloop的sam文件加了表头还有格式问题，用samtools转换成bam文件再跑（转的过程会自动修复格式问题）
+# 创建目录（如果不存在）
+mkdir -p "/data/mshe/rloopData/temp_bam_wRloop"
+for sam_file in /data/mshe/rloopData/strand_specific/*_x800_wRloop.sam; do
+    sample=$(basename "$sam_file" _x800_wRloop.sam)
+    bam_file="/data/mshe/rloopData/temp_bam_wRloop/${sample}_x800_wRloop.bam"
+    sorted_bam="${bam_file%.bam}.sorted.bam"
+    output_prefix="/data/mshe/rloopData/macs3_results_wRloop/${sample}_x800_bw2_wRloop_nomodel.macs3"
+    echo "处理: $(basename "$sam_file")"
+    # 检查MACS3输出是否已存在
+    if [ -f "${output_prefix}_peaks.xls" ]; then
+        echo "  MACS3结果已存在，跳过: ${sample}"
+        continue
+    fi
+    # 检查BAM文件是否已存在
+    if [ -f "$sorted_bam" ]; then
+        echo "  BAM文件已存在，直接使用: $(basename "$sorted_bam")"
+    else
+        echo "  转换: $(basename "$sam_file") -> BAM格式"
+        # 使用samtools转换
+        samtools view -b -S "$sam_file" -o "$bam_file"
+        # 排序和索引
+        samtools sort "$bam_file" -o "$sorted_bam"
+        samtools index "$sorted_bam"
+        # 删除中间文件节省空间
+        rm -f "$bam_file"
+    fi
+    echo "  使用BAM文件运行MACS3: $sample"
+    macs3 callpeak -t "$sorted_bam" \
+        --extsize 200 -q 0.05 \
+        --nomodel --SPMR -f BAM \
+        -g 1e+9 -B \
+        -n "$output_prefix"
+    
+    echo "  完成: $sample"
+    echo "---"
+done
