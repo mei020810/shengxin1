@@ -332,9 +332,12 @@ for bam_path in /data/mshe/rloopData/picard/*_picard.bam; do
     echo "cRloop筛选..."
         samtools view -h "$bam_path" | \
         perl -anle 'print if (($F[1]==99)||($F[1]==147))' > "/data/mshe/rloopData/strand_specific/${sample}_x800_cRloop.sam"
-    echo "wRloop筛选..."
+#（防止表头被删）perl -anle 'print if (/^@/ || ($F[1]==99)||($F[1]==147))' > "/data/mshe/rloopData/strand_specific/${sample}_x800_cRloop.sam"
+    
+echo "wRloop筛选..."
         samtools view -h "$bam_path" | \
         perl -anle 'print if (($F[1]==83)||($F[1]==163))' > "/data/mshe/rloopData/strand_specific/${sample}_x800_wRloop.sam"
+#perl -anle 'print if (/^@/ || ($F[1]==83)||($F[1]==163))' > "/data/mshe/rloopData/strand_specific/${sample}_x800_wRloop.sam"
 
         # 统计筛选结果
         cRloop_count=$(grep -c '^[^@]' "/data/mshe/rloopData/strand_specific/${sample}_x800_cRloop.sam")
@@ -385,9 +388,32 @@ echo "=== 重命名完成 ==="
 chmod +x rename_files.sh
 ./rename_files.sh
 
+#补全无表头的sam文件
+for suffix in "_x800_cRloop.sam" "_x800_wRloop.sam"; do
+    for sam_file in /data/mshe/rloopData/strand_specific/*${suffix}; do
+        sample=$(basename "$sam_file" "${suffix}")
+        raw_bam="/data/mshe/rloopData/picard/${sample}_x800_picard.bam"
+        
+        echo "文件: $(basename "$sam_file") -> 样本: $sample"
+        
+        if [ -f "$raw_bam" ]; then
+            samtools view -H "$raw_bam" > header.tmp
+            cat header.tmp "$sam_file" > "${sam_file}.tmp"
+            mv "${sam_file}.tmp" "$sam_file"
+            echo "已补全表头"
+        else
+            echo "找不到BAM: $raw_bam"
+        fi
+    done
+done
+# 删除临时文件
+rm -f header.tmp
+
 vim macs3_peak_calling.sh
 #!/bin/bash
-mkdir -p /data/mshe/rloopData/macs3_results
+mkdir -p /data/mshe/rloopData/macs3_results_full
+mkdir -p /data/mshe/rloopData/macs3_results_wRloop
+mkdir -p /data/mshe/rloopData/macs3_results_cRloop
 
 echo "=== 开始MACS3 Peak Calling ==="
 echo "开始时间: $(date)"
@@ -396,35 +422,52 @@ echo "开始时间: $(date)"
 echo "1. 全数据peak calling..."
 for bam_file in /data/mshe/rloopData/picard/*_x800_picard.bam; do
     sample=$(basename "$bam_file" _x800_picard.bam)
+    # 检查是否已经运行过
+    if [ -f "${output_prefix}_peaks.xls" ]; then
+        echo "跳过已处理的样本：$sample"
+        continue
+    fi
     echo "处理样本：$sample"
     macs3 callpeak -t "$bam_file" \
     --extsize 200 -q 0.05 \
     --nomodel --SPMR -f BAM \
     -g 1e+9 -B \
-    -n "/data/mshe/rloopData/macs3_results/${sample}_x800_bw2_nomodel.macs3"
+    -n "/data/mshe/rloopData/macs3_results_full/${sample}_x800_bw2_nomodel.macs3"
 done
+
 echo "2. wRloop peak calling..."
 for wRloop_file in /data/mshe/rloopData/strand_specific/*_x800_wRloop.sam; do
     sample=$(basename "$wRloop_file" _x800_wRloop.sam)
+    # 检查是否已经运行过
+    if [ -f "${output_prefix}_peaks.xls" ]; then
+        echo "跳过已处理的样本：$sample"
+        continue
+    fi
     echo "处理样本：$sample"
     macs3 callpeak -t "$wRloop_file" \
     --extsize 200 -q 0.05 \
     --nomodel --SPMR -f SAM \
     -g 1e+9 -B \
-    -n "/data/mshe/rloopData/macs3_results/${sample}_x800_bw2_wRloop_nomodel.macs3"
+    -n "/data/mshe/rloopData/macs3_results_wRloop/${sample}_x800_bw2_wRloop_nomodel.macs3"
 done
+
 echo "3. cRloop peak calling..."
 for cRloop_file in /data/mshe/rloopData/strand_specific/*_x800_cRloop.sam; do
     sample=$(basename "$cRloop_file" _x800_cRloop.sam)
+    # 检查是否已经运行过
+    if [ -f "${output_prefix}_peaks.xls" ]; then
+        echo "跳过已处理的样本：$sample"
+        continue
+    fi
     echo "处理样本：$sample"
     macs3 callpeak -t "$cRloop_file" \
     --extsize 200 -q 0.05 \
     --nomodel --SPMR -f SAM \
     -g 1e+9 -B \
-    -n "/data/mshe/rloopData/macs3_results/${sample}_x800_bw2_cRloop_nomodel.macs3"
+    -n "/data/mshe/rloopData/macs3_results_cRloop/${sample}_x800_bw2_cRloop_nomodel.macs3"
 done
 echo "=== MACS3 Peak Calling 完成 ==="
 echo "结束时间: $(date)"
 
 chmod u+x macs3_peak_calling.sh
-./macs3_peak_calling.sh 
+nohup ./macs3_peak_calling.sh > macs3_peak_calling.log 2>&1 &
