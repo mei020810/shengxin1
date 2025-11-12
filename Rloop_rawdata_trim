@@ -221,8 +221,8 @@ for sam_file in sam/*.bw2.sam; do
             MAX_FILE_HANDLES=800 \
             VALIDATION_STRINGENCY=LENIENT \
             I='/data/mshe/rloopData/bam/${sample}_x800.sorted.bam' \
-            O='/data/mshe/rloopData/picard/${sample}_picard.bam' \
-            M='/data/mshe/rloopData/picard/${sample}_picard_metrics.txt'
+            O='/data/mshe/rloopData/picard/${sample}_picard.bam' \  #如果没加_x800可以在这里加上
+            M='/data/mshe/rloopData/picard/${sample}_picard_metrics.txt'  #如果没加_x800可以在这里加上
         
         echo '  - 完成: $sample'
     " > "/data/mshe/rloopData/logs/${sample}_sam_bam_picard.log" 2>&1 &
@@ -474,7 +474,7 @@ nohup ./macs3_peak_calling.sh > macs3_peak_calling.log 2>&1 &
 
 #wRloop的sam文件加了表头还有格式问题，用samtools转换成bam文件再跑（转的过程会自动修复格式问题）
 # 创建目录（如果不存在）
-mkdir -p "/data/mshe/rloopData/temp_bam_wRloop"
+mkdir -p "/data/mshe/rloopData/temp_bam_wRloop"   # 文件夹已改名为bam_wRloop
 for sam_file in /data/mshe/rloopData/strand_specific/*_x800_wRloop.sam; do
     sample=$(basename "$sam_file" _x800_wRloop.sam)
     bam_file="/data/mshe/rloopData/temp_bam_wRloop/${sample}_x800_wRloop.bam"
@@ -509,3 +509,176 @@ for sam_file in /data/mshe/rloopData/strand_specific/*_x800_wRloop.sam; do
     echo "  完成: $sample"
     echo "---"
 done
+
+#cRloop的sam→bam 
+mkdir -p "/data/mshe/rloopData/bam_cRloop"
+for sam_file in /data/mshe/rloopData/strand_specific/*_x800_cRloop.sam; do
+    sample=$(basename "$sam_file" _x800_cRloop.sam)
+    bam_file="/data/mshe/rloopData/bam_cRloop/${sample}_x800_cRloop.bam"
+    sorted_bam="${bam_file%.bam}.sorted.bam"
+    echo "处理: $(basename "$sam_file")"
+    # 检查BAM文件是否已存在
+    if [ -f "$sorted_bam" ]; then
+        echo "  BAM文件已存在"
+    else
+        echo "  转换: $(basename "$sam_file") -> BAM格式"
+        # 使用samtools转换
+        samtools view -b -S -@ 8 "$sam_file" -o "$bam_file"
+        # 排序和索引
+        samtools sort -@ 8 "$bam_file" -o "$sorted_bam"
+        samtools index "$sorted_bam"
+        # 删除中间文件节省空间
+        rm -f "$bam_file"
+    fi
+done
+
+#deeptools可视化需要bam的排序文件及其同名索引，此处给picard的索引改名
+for file in /data/mshe/rloopData/picard/*_picard.bai; do
+    if [ -f "$file" ] && [[ "$file" != *"_x800_picard.bai" ]]; then
+        new_file="${file/_picard.bai/_x800_picard.bai}"
+        echo "$(basename "$file") -> $(basename "$new_file")"
+        mv "$file" "$new_file"
+    fi
+done
+for file in /data/mshe/rloopData/picard/*_picard_metrics.txt; do
+    if [ -f "$file" ] && [[ "$file" != *"_x800_picard_metrics.txt" ]]; then
+        new_file="${file/_picard_metrics.txt/_x800_picard_metrics.txt}"
+        echo "$(basename "$file") -> $(basename "$new_file")"
+        mv "$file" "$new_file"
+    fi
+done
+
+#deeptools识别bam文件容易出错，将所有样本转为bigwig文件
+vim create_bigwig.sh
+
+#!/bin/bash
+mkdir -p /data/mshe/rloopData/deeptools/bigwigs
+echo "开始时间: $(date)"
+
+# 为所有样本生成bigWig文件
+echo "=== 生成bigWig文件 ==="
+# Full数据的BAM文件
+for bam_file in /data/mshe/rloopData/picard/*_x800_picard.bam; do
+    sample=$(basename "$bam_file" _x800_picard.bam)
+    bw_file="/data/mshe/rloopData/deeptools/bigwigs/${sample}_x800_full.bw"
+    
+    if [ ! -f "$bw_file" ]; then
+        echo "生成full bigWig: $sample"
+        bamCoverage -b "$bam_file" -o "$bw_file" --binSize 10 --normalizeUsing RPKM --numberOfProcessors 4
+    else
+        echo "full bigwig文件已存在：$sample"
+    fi
+done
+
+# wRloop数据的BAM文件
+for bam_file in /data/mshe/rloopData/bam_wRloop/*_x800_wRloop.sorted.bam; do
+    if [ ! -f "$bam_file" ]; then
+        echo "文件不存在，跳过: $bam_file"
+        continue
+    fi
+    sample=$(basename "$bam_file" _x800_wRloop.sorted.bam)
+    bw_file="/data/mshe/rloopData/deeptools/bigwigs/${sample}_x800_wRloop.bw"
+    
+    if [ ! -f "$bw_file" ]; then
+        echo "生成wRloop bigWig: $sample"
+        bamCoverage -b "$bam_file" -o "$bw_file" --binSize 10 --normalizeUsing RPKM --numberOfProcessors 4
+    else
+        echo "wRloop bigWig已存在: $sample"
+    fi
+done
+
+# cRloop数据的BAM文件
+for bam_file in /data/mshe/rloopData/bam_cRloop/*_x800_cRloop.sorted.bam; do
+    if [ ! -f "$bam_file" ]; then
+        echo "文件不存在，跳过: $bam_file"
+        continue
+    fi
+    sample=$(basename "$bam_file" _x800_cRloop.sorted.bam)
+    bw_file="/data/mshe/rloopData/deeptools/bigwigs/${sample}_x800_cRloop.bw"
+    
+    if [ ! -f "$bw_file" ]; then
+        echo "生成cRloop bigWig: $sample"
+        bamCoverage -b "$bam_file" -o "$bw_file" --binSize 10 --normalizeUsing RPKM --numberOfProcessors 4
+    else
+        echo "cRloop bigWig已存在: $sample"
+    fi
+done
+echo "完成时间: $(date)"
+
+chmod u+x create_bigwig.sh
+nohup ./create_bigwig.sh > create_bigwig.log 2>&1 &
+
+# deeptools可视化（取summit区域上下游1kb）
+vim summit_deeptools.sh
+
+#!/bin/bash
+mkdir -p /data/mshe/rloopData/deeptools/summit_matrix
+echo "=== 开始Deeptools Summit可视化 ==="
+echo "开始时间: $(date)"
+
+# 生成summit中心区域的矩阵（full）
+for bw_file in /data/mshe/rloopData/deeptools/bigwigs/*_x800_full.bw; do
+    sample=$(basename "$bw_file" _x800_full.bw)
+    summit_bed="/data/mshe/rloopData/macs3_results_full/${sample}_x800_bw2_nomodel.macs3_summits.bed"
+    
+    if [ -f "$summit_bed" ]; then
+        echo "处理样本: $sample"
+        # 以summit为中心，上下游各1kb生成热图
+        computeMatrix reference-point \
+            --referencePoint center \
+            -b 1000 -a 1000 \
+            -R "$summit_bed" \
+            -S "$bw_file" \
+            -p 8 \
+            -o "/data/mshe/rloopData/deeptools/summit_matrix/${sample}_x800_summit_matrix.gz"
+        
+        # 绘制热图
+        echo "  绘制热图..."
+        plotHeatmap -m "/data/mshe/rloopData/deeptools/summit_matrix/${sample}_x800_summit_matrix.gz" \
+            -o "/data/mshe/rloopData/deeptools/summit_matrix/${sample}_x800_summit_heatmap" \
+            --outFileFormats pdf svg png \
+            --colorMap viridis \
+            --plotTitle "${sample} R-loop Summit 上下游1kb信号热图" \
+            --refPointLabel "Peak Summit"
+    echo "  完成: $sample"
+    fi
+done
+
+echo "=== 处理wRloop和cRloop数据 ==="
+for peak_type in wRloop cRloop; do
+    for bw_file in /data/mshe/rloopData/deeptools/bigwigs/*_x800_${peak_type}.bw; do
+        if [ ! -f "$bw_file" ]; then
+            echo "跳过不存在的BAM文件: $bw_file"
+            continue
+        fi
+        sample_base=$(basename "$bw_file" _x800_${peak_type}.bw)
+        summit_bed="/data/mshe/rloopData/macs3_results_${peak_type}/${sample_base}_x800_bw2_${peak_type}_nomodel.macs3_summits.bed"
+        if [ -f "$summit_bed" ]; then
+            echo "处理${peak_type}: $sample_base"
+            matrix_file="/data/mshe/rloopData/deeptools/summit_matrix/${sample_base}_x800_${peak_type}_summit_matrix.gz"
+            computeMatrix reference-point \
+                --referencePoint center \
+                -b 1000 -a 1000 \
+                -R "$summit_bed" \
+                -S "$bw_file" \
+                -p 8 \
+                -o "$matrix_file"
+            echo "  绘制热图..."
+            plotHeatmap -m "$matrix_file" \
+                -o "/data/mshe/rloopData/deeptools/summit_matrix/${sample_base}_x800_${peak_type}_summit_heatmap" \
+                --outFileFormats pdf svg png \
+                --colorMap viridis \
+                --plotTitle "${sample_base} ${peak_type} Peak Summit 上下游1kb信号热图" \
+                --refPointLabel "Peak Summit" \
+                --samplesLabel "${sample_base}_${peak_type}"
+        echo "  完成: ${sample_base}_${peak_type}"
+        else
+            echo "  跳过: 找不到summit文件 $summit_bed"
+        fi
+    done
+done
+echo "=== Deeptools Summit可视化完成 ==="
+echo "结束时间: $(date)"
+
+chmod u+x summit_deeptools.sh
+./summit_deeptools.sh
