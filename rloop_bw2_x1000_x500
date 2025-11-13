@@ -151,10 +151,40 @@ echo "全部任务完成！时间: $(date)"
 chmod u+x bw2_x500_rloop.sh
 nohup ./bw2_x500_rloop.sh > "bw2_x500_rloop.log" 2>&1 & #tail -f bw2_x500_rloop.log
 
+#查看1000的插入片段分布
+vim quick_insert_size_summary.sh
+#!/bin/bash
+echo "样本 | <100bp | 100-200bp | 200-300bp | 300-500bp | >500bp | >800bp"
+echo "--- | --- | --- | --- | --- | --- | ---"
 
-# 对多个样本批量检查 FLAG 分布
-for bam in *.sorted.bam; do
-    echo "=== $bam ==="
-    samtools view "$bam" | awk '{print $2}' | sort | uniq -c
-    echo
+for sam_file in /data/mshe/rloopData/sam_x1000/*.bw2.sam; do
+    sample=$(basename "$sam_file" .bw2.sam)
+    
+    samtools view -f 2 "$sam_file" 2>/dev/null | \
+    awk 'function abs(x){return ((x < 0.0) ? -x : x)} 
+         {
+           size = abs($9);
+           if(size > 0) {
+             if(size < 100) a++;
+             else if(size <= 200) b++;
+             else if(size <= 300) c++;
+             else if(size <= 500) d++;
+             else e++;
+             
+             if(size > 800) f++;
+             total++;
+           }
+         }
+         END {
+           if(total > 0) {
+             printf "%s | %d (%.1f%%) | %d (%.1f%%) | %d (%.1f%%) | %d (%.1f%%) | %d (%.1f%%) | %d (%.1f%%)\n",
+                    "'"$sample"'", 
+                    a, a/total*100, b, b/total*100, c, c/total*100,
+                    d, d/total*100, e, e/total*100, f, f/total*100;
+           }
+         }'
 done
+chmod +x quick_insert_size_summary.sh
+./quick_insert_size_summary.sh > insert_size_summary.txt
+
+
