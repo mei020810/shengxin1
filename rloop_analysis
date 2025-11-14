@@ -74,7 +74,6 @@ for variety in HC22 HH43 HX3 Wm82 ZH13; do
         printf "%-25s %-8s %-8s %-8s %-8s %-8s\n" \
             "${variety}-IP" "$rep1_count" "$rep2_count" "$strict" "$window50" "$window100"
     fi
-
 done
 chmod u+x test_peak_overlap.sh
 ./test_peak_overlap.sh
@@ -145,3 +144,63 @@ echo "结束时间: $(date)"
 
 chmod u+x q0_01_macs3_peak_calling.sh
 nohup ./q0_01_macs3_peak_calling.sh > q0_01_macs3_peak_calling.log 2>&1 &
+
+echo "=== 各样本Peak数量统计 ==="
+printf "%-30s %-10s %-10s\n" "Sample" "Peaks" "Type"
+echo "------------------------------------------------"
+
+for summit_file in /data/mshe/rloopData/q0_01_macs3_results_*/*_peaks.narrowPeak; do
+    sample=$(basename "$summit_file" _q0_01_nomodel.macs3_peaks.narrowPeak)
+    peak_count=$(awk '!/^#/ && !/^$/ {count++} END {print count}' "$summit_file")
+    
+    # 判断样本类型
+    if [[ "$sample" == *"input"* ]]; then
+        type="Input"
+    elif [[ "$sample" == *"IP"* ]]; then
+        type="IP"
+    else
+        type="Unknown"
+    fi
+    
+    printf "%-30s %-10s %-10s\n" "$sample" "$peak_count" "$type"
+done | sort -k2 -nr  # 按peak数量降序排列
+
+
+echo "=== bedtools的Overlap分析 ==="
+printf "%-25s %-8s %-8s %-8s %-8s %-8s\n" "Condition" "Rep1" "Rep2" "Strict" "50bp" "100bp"
+echo "------------------------------------------------------------------------"
+
+for variety in HC22 HH43 HX3 Wm82 ZH13; do
+    # Input重复
+    rep1="/data/mshe/rloopData/q0_01_macs3_results_full/${variety}-1-input_x800_bw2_q0_01_nomodel.macs3_summits.bed"
+    rep2="/data/mshe/rloopData/q0_01_macs3_results_full/${variety}-2-input_x800_bw2_q0_01_nomodel.macs3_summits.bed"
+    
+    if [ -f "$rep1" ] && [ -f "$rep2" ]; then
+        rep1_count=$(wc -l < "$rep1")
+        rep2_count=$(wc -l < "$rep2")
+        
+        # 三种overlap计算方法
+        strict=$(bedtools intersect -a "$rep1" -b "$rep2" -wa -u | wc -l)
+        window50=$(bedtools window -a "$rep1" -b "$rep2" -w 50 | wc -l)
+        window100=$(bedtools window -a "$rep1" -b "$rep2" -w 100 | wc -l)
+        
+        printf "%-25s %-8s %-8s %-8s %-8s %-8s\n" \
+            "${variety}-input" "$rep1_count" "$rep2_count" "$strict" "$window50" "$window100"
+    fi
+
+    # IP重复
+    rep1="/data/mshe/rloopData/q0_01_macs3_results_full/${variety}-1-IP_x800_bw2_q0_01_nomodel.macs3_summits.bed"
+    rep2="/data/mshe/rloopData/q0_01_macs3_results_full/${variety}-2-IP_x800_bw2_q0_01_nomodel.macs3_summits.bed"
+    
+    if [ -f "$rep1" ] && [ -f "$rep2" ]; then
+        rep1_count=$(wc -l < "$rep1")
+        rep2_count=$(wc -l < "$rep2")
+        
+        strict=$(bedtools intersect -a "$rep1" -b "$rep2" -wa -u | wc -l)
+        window50=$(bedtools window -a "$rep1" -b "$rep2" -w 50 | wc -l)
+        window100=$(bedtools window -a "$rep1" -b "$rep2" -w 100 | wc -l)
+        
+        printf "%-25s %-8s %-8s %-8s %-8s %-8s\n" \
+            "${variety}-IP" "$rep1_count" "$rep2_count" "$strict" "$window50" "$window100"
+    fi
+done
