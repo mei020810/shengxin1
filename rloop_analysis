@@ -79,3 +79,69 @@ done
 chmod u+x test_peak_overlap.sh
 ./test_peak_overlap.sh
 
+#运行q值为0.01的peakcalling
+vim q0_01_macs3_peak_calling.sh
+#!/bin/bash
+mkdir -p /data/mshe/rloopData/q0_01_macs3_results_full
+mkdir -p /data/mshe/rloopData/q0_01_macs3_results_wRloop
+mkdir -p /data/mshe/rloopData/q0_01_macs3_results_cRloop
+
+echo "=== 开始MACS3 Peak Calling ==="
+echo "开始时间: $(date)"
+
+# 1. 全数据peak calling
+echo "1. 全数据peak calling..."
+for bam_file in /data/mshe/rloopData/picard/*_x800_picard.bam; do
+    sample=$(basename "$bam_file" _x800_picard.bam)
+    output_prefix="/data/mshe/rloopData/q0_01_macs3_results_full/${sample}_x800_bw2_q0_01_nomodel.macs3"
+    # 检查是否已经运行过
+    if [ -f "${output_prefix}_peaks.xls" ]; then
+        echo "跳过已处理的样本：$sample"
+        continue
+    fi
+    echo "处理样本：$sample"
+    macs3 callpeak -t "$bam_file" \
+    --extsize 200 -q 0.01 \
+    --nomodel --SPMR -f BAM \
+    -g 1e+9 -B \
+    -n "$output_prefix"
+done
+
+echo "2. wRloop peak calling..."
+for wRloop_file in /data/mshe/rloopData/bam_wRloop/*_x800_wRloop.sorted.bam; do
+    sample=$(basename "$wRloop_file" _x800_wRloop.sorted.bam)
+    output_prefix="/data/mshe/rloopData/q0_01_macs3_results_wRloop/${sample}_x800_bw2_wRloop_q0_01_nomodel.macs3"
+    # 检查是否已经运行过
+    if [ -f "${output_prefix}_peaks.xls" ]; then
+        echo "跳过已处理的样本：$sample"
+        continue
+    fi
+    echo "处理样本：$sample"
+    macs3 callpeak -t "$wRloop_file" \
+    --extsize 200 -q 0.01 \
+    --nomodel --SPMR -f BAM \
+    -g 1e+9 -B \
+    -n "$output_prefix"
+done
+
+echo "3. cRloop peak calling..."
+for cRloop_file in /data/mshe/rloopData/bam_cRloop/*_x800_cRloop.sorted.bam; do
+    sample=$(basename "$cRloop_file" _x800_cRloop.sorted.bam)
+    output_prefix="/data/mshe/rloopData/q0_01_macs3_results_cRloop/${sample}_x800_bw2_cRloop_q0_01_nomodel.macs3"
+    # 检查是否已经运行过
+    if [ -f "${output_prefix}_peaks.xls" ]; then
+        echo "跳过已处理的样本：$sample"
+        continue
+    fi
+    echo "处理样本：$sample"
+    macs3 callpeak -t "$cRloop_file" \
+    --extsize 200 -q 0.01 \
+    --nomodel --SPMR -f BAM \
+    -g 1e+9 -B \
+    -n "$output_prefix"
+done
+echo "=== MACS3 Peak Calling 完成 ==="
+echo "结束时间: $(date)"
+
+chmod u+x q0_01_macs3_peak_calling.sh
+nohup ./q0_01_macs3_peak_calling.sh > q0_01_macs3_peak_calling.log 2>&1 &
