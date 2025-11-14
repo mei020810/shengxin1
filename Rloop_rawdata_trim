@@ -608,7 +608,7 @@ echo "完成时间: $(date)"
 chmod u+x create_bigwig.sh
 nohup ./create_bigwig.sh > create_bigwig.log 2>&1 &
 
-# deeptools可视化（取summit区域上下游1kb）
+# deeptools可视化（取summit区域上下游2kb）
 vim summit_deeptools.sh
 
 #!/bin/bash
@@ -623,23 +623,23 @@ for bw_file in /data/mshe/rloopData/deeptools/bigwigs/*_x800_full.bw; do
     
     if [ -f "$summit_bed" ]; then
         echo "处理样本: $sample"
-        # 以summit为中心，上下游各1kb生成热图
+        # 以summit为中心，上下游各2kb生成热图
         computeMatrix reference-point \
             --referencePoint center \
-            -b 1000 -a 1000 \
+            -b 2000 -a 2000 \
             -R "$summit_bed" \
             -S "$bw_file" \
             -p 8 \
+            --missingDataAsZero \
             -o "/data/mshe/rloopData/deeptools/summit_matrix/${sample}_x800_summit_matrix.gz"
         
         # 绘制热图
         echo "  绘制热图..."
         plotHeatmap -m "/data/mshe/rloopData/deeptools/summit_matrix/${sample}_x800_summit_matrix.gz" \
-            -o "/data/mshe/rloopData/deeptools/summit_matrix/${sample}_x800_summit_heatmap" \
-            --outFileFormats pdf svg png \
-            --colorMap viridis \
-            --plotTitle "${sample} R-loop Summit 上下游1kb信号热图" \
-            --refPointLabel "Peak Summit"
+            -o "/data/mshe/rloopData/deeptools/summit_matrix/${sample}_x800_summit_heatmap.pdf" \
+            --colorMap Blues \
+            --plotTitle "${sample} R-loop Summit 上下游2kb信号热图" \
+            --refPointLabel "Summit"
     echo "  完成: $sample"
     fi
 done
@@ -658,18 +658,18 @@ for peak_type in wRloop cRloop; do
             matrix_file="/data/mshe/rloopData/deeptools/summit_matrix/${sample_base}_x800_${peak_type}_summit_matrix.gz"
             computeMatrix reference-point \
                 --referencePoint center \
-                -b 1000 -a 1000 \
+                -b 2000 -a 2000 \
                 -R "$summit_bed" \
                 -S "$bw_file" \
                 -p 8 \
+                --missingDataAsZero \
                 -o "$matrix_file"
             echo "  绘制热图..."
             plotHeatmap -m "$matrix_file" \
-                -o "/data/mshe/rloopData/deeptools/summit_matrix/${sample_base}_x800_${peak_type}_summit_heatmap" \
-                --outFileFormats pdf svg png \
-                --colorMap viridis \
-                --plotTitle "${sample_base} ${peak_type} Peak Summit 上下游1kb信号热图" \
-                --refPointLabel "Peak Summit" \
+                -o "/data/mshe/rloopData/deeptools/summit_matrix/${sample_base}_x800_${peak_type}_summit_heatmap.pdf" \
+                --plotTitle "${sample_base} ${peak_type} Peak Summit 上下游2kb信号热图" \
+                --colorMap Blues \
+                --refPointLabel "Summit" \
                 --samplesLabel "${sample_base}_${peak_type}"
         echo "  完成: ${sample_base}_${peak_type}"
         else
@@ -681,4 +681,61 @@ echo "=== Deeptools Summit可视化完成 ==="
 echo "结束时间: $(date)"
 
 chmod u+x summit_deeptools.sh
-./summit_deeptools.sh
+nohup ./summit_deeptools.sh > summit_deeptools.log 2>&1 &
+
+#按样本分组做矩阵和热图
+vim summit_group_comparisons.sh
+#!/bin/bash
+mkdir -p /data/mshe/rloopData/deeptools/group_comparisons
+# 按品种分组：HC22, HH43, HX3, Wm82, ZH13
+for variety in HC22 HH43 HX3 Wm82 ZH13; do
+    echo "=== 处理品种: $variety ==="
+    
+    # 收集该品种的所有bigWig文件
+    bw_files=()
+    labels=()
+    
+    # Input样本
+    for bw in /data/mshe/rloopData/deeptools/bigwigs/${variety}*-input*_full.bw; do
+        if [ -f "$bw" ]; then
+            bw_files+=("$bw")
+            sample=$(basename "$bw" _x800_full.bw)
+            labels+=("${sample}_input")
+        fi
+    done
+    
+    # IP样本  
+    for bw in /data/mshe/rloopData/deeptools/bigwigs/${variety}*-IP*_full.bw; do
+        if [ -f "$bw" ]; then
+            bw_files+=("$bw")
+            sample=$(basename "$bw" _x800_full.bw)
+            labels+=("${sample}_IP")
+        fi
+    done
+    
+    if [ ${#bw_files[@]} -gt 0 ]; then
+        # 使用该品种第一个样本的summit文件作为参考
+        ref_sample=$(basename "${bw_files[0]}" _x800_full.bw)
+        summit_bed="/data/mshe/rloopData/macs3_results_full/${ref_sample}_x800_bw2_nomodel.macs3_summits.bed"
+        
+        if [ -f "$summit_bed" ]; then
+            echo "生成品种 $variety 的热图..."
+            computeMatrix reference-point \
+                --referencePoint center \
+                -b 2000 -a 2000 \
+                -R "$summit_bed" \
+                -S "${bw_files[@]}" \
+                --samplesLabel "${labels[@]}" \
+                -p 4 \
+                -o "/data/mshe/rloopData/deeptools/group_comparisons/${variety}_comparison_matrix.gz"
+            
+            plotHeatmap -m "/data/mshe/rloopData/deeptools/group_comparisons/${variety}_comparison_matrix.gz" \
+                -o "/data/mshe/rloopData/deeptools/group_comparisons/${variety}_comparison_heatmap" \
+                --outFileFormats pdf svg png \
+                --colorMap RdBu \
+                --plotTitle "$variety R-loop Summit Signal" \
+                --refPointLabel "Summit" \
+                --legendLocation best
+        fi
+    fi
+done
