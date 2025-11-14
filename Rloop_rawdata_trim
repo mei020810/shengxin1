@@ -332,16 +332,16 @@ for bam_path in /data/mshe/rloopData/picard/*_picard.bam; do
     echo "cRloop筛选..."
         samtools view -h "$bam_path" | \
         perl -anle 'print if (($F[1]==99)||($F[1]==147))' > "/data/mshe/rloopData/strand_specific/${sample}_x800_cRloop.sam"
-#（防止表头被删）perl -anle 'print if (/^@/ || ($F[1]==99)||($F[1]==147))' > "/data/mshe/rloopData/strand_specific/${sample}_x800_cRloop.sam"
+#（防止表头被删）perl -anle 'print if (/^@/ || ($F[1]==99)||($F[1]==147))' > "/data/mshe/rloopData/strand_specific/${sample}_x800_cRloop.sam" #注意此处应为bam文件，因为输入文件是bam文件
     
 echo "wRloop筛选..."
         samtools view -h "$bam_path" | \
-        perl -anle 'print if (($F[1]==83)||($F[1]==163))' > "/data/mshe/rloopData/strand_specific/${sample}_x800_wRloop.sam"
-#perl -anle 'print if (/^@/ || ($F[1]==83)||($F[1]==163))' > "/data/mshe/rloopData/strand_specific/${sample}_x800_wRloop.sam"
+        perl -anle 'print if (($F[1]==83)||($F[1]==163))' > "/data/mshe/rloopData/strand_specific/${sample}_x800_wRloop.sam" 
+#perl -anle 'print if (/^@/ || ($F[1]==83)||($F[1]==163))' > "/data/mshe/rloopData/strand_specific/${sample}_x800_wRloop.sam" #注意此处应为bam文件，因为输入文件是bam文件
 
         # 统计筛选结果
-        cRloop_count=$(grep -c '^[^@]' "/data/mshe/rloopData/strand_specific/${sample}_x800_cRloop.sam")
-        wRloop_count=$(grep -c '^[^@]' "/data/mshe/rloopData/strand_specific/${sample}_x800_wRloop.sam")
+        cRloop_count=$(grep -c '^[^@]' "/data/mshe/rloopData/strand_specific/${sample}_x800_cRloop.sam") #注意此处应为bam文件，因为输入文件是bam文件
+        wRloop_count=$(grep -c '^[^@]' "/data/mshe/rloopData/strand_specific/${sample}_x800_wRloop.sam") #注意此处应为bam文件，因为输入文件是bam文件
     echo "完成: $sample - cRloop: $cRloop_count reads, wRloop: $wRloop_count reads"
     echo "----------------------------------------"
 done 
@@ -446,7 +446,7 @@ for wRloop_file in /data/mshe/rloopData/strand_specific/*_x800_wRloop.sam; do
     echo "处理样本：$sample"
     macs3 callpeak -t "$wRloop_file" \
     --extsize 200 -q 0.05 \
-    --nomodel --SPMR -f SAM \
+    --nomodel --SPMR -f SAM \  #这里就因为前面文件名写错了，所以把参数写成了sam
     -g 1e+9 -B \
     -n "/data/mshe/rloopData/macs3_results_wRloop/${sample}_x800_bw2_wRloop_nomodel.macs3"
 done
@@ -462,7 +462,7 @@ for cRloop_file in /data/mshe/rloopData/strand_specific/*_x800_cRloop.sam; do
     echo "处理样本：$sample"
     macs3 callpeak -t "$cRloop_file" \
     --extsize 200 -q 0.05 \
-    --nomodel --SPMR -f SAM \
+    --nomodel --SPMR -f SAM \ #这里就因为前面文件名写错了，所以把参数写成了sam
     -g 1e+9 -B \
     -n "/data/mshe/rloopData/macs3_results_cRloop/${sample}_x800_bw2_cRloop_nomodel.macs3"
 done
