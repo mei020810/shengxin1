@@ -167,8 +167,9 @@ done | sort -k2 -nr  # 按peak数量降序排列
 
 
 echo "=== bedtools的Overlap分析 ==="
-printf "%-25s %-8s %-8s %-8s %-8s %-8s\n" "Condition" "Rep1" "Rep2" "Strict" "50bp" "100bp"
-echo "------------------------------------------------------------------------"
+printf "%-25s %-8s %-8s %-8s %-8s %-8s %-15s %-15s %-15s\n" \
+    "Condition" "Rep1" "Rep2" "Strict" "50bp" "100bp" "Strict(%)" "50bp(%)" "100bp(%)"
+echo "--------------------------------------------------------------------------------------------------------"
 
 for variety in HC22 HH43 HX3 Wm82 ZH13; do
     # Input重复
@@ -179,13 +180,51 @@ for variety in HC22 HH43 HX3 Wm82 ZH13; do
         rep1_count=$(wc -l < "$rep1")
         rep2_count=$(wc -l < "$rep2")
         
-        # 三种overlap计算方法
-        strict=$(bedtools intersect -a "$rep1" -b "$rep2" -wa -u | wc -l)
-        window50=$(bedtools window -a "$rep1" -b "$rep2" -w 50 | wc -l)
-        window100=$(bedtools window -a "$rep1" -b "$rep2" -w 100 | wc -l)
+        # 计算两种方向的overlap
+        # a vs b: Rep1中与Rep2重叠的
+        strict_ab=$(bedtools intersect -a "$rep1" -b "$rep2" -wa -u | wc -l)
+        window50_ab=$(bedtools window -a "$rep1" -b "$rep2" -w 50 -u | wc -l)
+        window100_ab=$(bedtools window -a "$rep1" -b "$rep2" -w 100 -u | wc -l)
         
-        printf "%-25s %-8s %-8s %-8s %-8s %-8s\n" \
-            "${variety}-input" "$rep1_count" "$rep2_count" "$strict" "$window50" "$window100"
+        # b vs a: Rep2中与Rep1重叠的
+        strict_ba=$(bedtools intersect -a "$rep2" -b "$rep1" -wa -u | wc -l)
+        window50_ba=$(bedtools window -a "$rep2" -b "$rep1" -w 50 -u | wc -l)
+        window100_ba=$(bedtools window -a "$rep2" -b "$rep1" -w 100 -u | wc -l)
+        
+        # 计算比例
+        if [ $rep1_count -gt 0 ]; then
+            strict_ratio_ab=$(awk -v s=$strict_ab -v r1=$rep1_count 'BEGIN {printf "%.2f", s*100/r1}')
+            window50_ratio_ab=$(awk -v w=$window50_ab -v r1=$rep1_count 'BEGIN {printf "%.2f", w*100/r1}')
+            window100_ratio_ab=$(awk -v w=$window100_ab -v r1=$rep1_count 'BEGIN {printf "%.2f", w*100/r1}')
+        else
+            strict_ratio_ab="0.00"
+            window50_ratio_ab="0.00"
+            window100_ratio_ab="0.00"
+        fi
+        
+        if [ $rep2_count -gt 0 ]; then
+            strict_ratio_ba=$(awk -v s=$strict_ba -v r2=$rep2_count 'BEGIN {printf "%.2f", s*100/r2}')
+            window50_ratio_ba=$(awk -v w=$window50_ba -v r2=$rep2_count 'BEGIN {printf "%.2f", w*100/r2}')
+            window100_ratio_ba=$(awk -v w=$window100_ba -v r2=$rep2_count 'BEGIN {printf "%.2f", w*100/r2}')
+        else
+            strict_ratio_ba="0.00"
+            window50_ratio_ba="0.00"
+            window100_ratio_ba="0.00"
+        fi
+        
+        # 格式化为 a%/b%
+        strict_ratio="${strict_ratio_ab}%/${strict_ratio_ba}%"
+        window50_ratio="${window50_ratio_ab}%/${window50_ratio_ba}%"
+        window100_ratio="${window100_ratio_ab}%/${window100_ratio_ba}%"
+        
+        # 显示overlap总数（使用a vs b的结果，因为两者应该相同）
+        strict_total=$strict_ab
+        window50_total=$window50_ab
+        window100_total=$window100_ab
+        
+        printf "%-25s %-8s %-8s %-8s %-8s %-8s %-15s %-15s %-15s\n" \
+            "${variety}-input" "$rep1_count" "$rep2_count" "$strict_total" "$window50_total" "$window100_total" \
+            "$strict_ratio" "$window50_ratio" "$window100_ratio"
     fi
 
     # IP重复
@@ -196,11 +235,263 @@ for variety in HC22 HH43 HX3 Wm82 ZH13; do
         rep1_count=$(wc -l < "$rep1")
         rep2_count=$(wc -l < "$rep2")
         
-        strict=$(bedtools intersect -a "$rep1" -b "$rep2" -wa -u | wc -l)
-        window50=$(bedtools window -a "$rep1" -b "$rep2" -w 50 | wc -l)
-        window100=$(bedtools window -a "$rep1" -b "$rep2" -w 100 | wc -l)
+        # 计算两种方向的overlap
+        # a vs b: Rep1中与Rep2重叠的
+        strict_ab=$(bedtools intersect -a "$rep1" -b "$rep2" -wa -u | wc -l)
+        window50_ab=$(bedtools window -a "$rep1" -b "$rep2" -w 50 -u | wc -l)
+        window100_ab=$(bedtools window -a "$rep1" -b "$rep2" -w 100 -u | wc -l)
         
-        printf "%-25s %-8s %-8s %-8s %-8s %-8s\n" \
-            "${variety}-IP" "$rep1_count" "$rep2_count" "$strict" "$window50" "$window100"
+        # b vs a: Rep2中与Rep1重叠的
+        strict_ba=$(bedtools intersect -a "$rep2" -b "$rep1" -wa -u | wc -l)
+        window50_ba=$(bedtools window -a "$rep2" -b "$rep1" -w 50 -u | wc -l)
+        window100_ba=$(bedtools window -a "$rep2" -b "$rep1" -w 100 -u | wc -l)
+        
+        # 计算比例
+        if [ $rep1_count -gt 0 ]; then
+            strict_ratio_ab=$(awk -v s=$strict_ab -v r1=$rep1_count 'BEGIN {printf "%.2f", s*100/r1}')
+            window50_ratio_ab=$(awk -v w=$window50_ab -v r1=$rep1_count 'BEGIN {printf "%.2f", w*100/r1}')
+            window100_ratio_ab=$(awk -v w=$window100_ab -v r1=$rep1_count 'BEGIN {printf "%.2f", w*100/r1}')
+        else
+            strict_ratio_ab="0.00"
+            window50_ratio_ab="0.00"
+            window100_ratio_ab="0.00"
+        fi
+        
+        if [ $rep2_count -gt 0 ]; then
+            strict_ratio_ba=$(awk -v s=$strict_ba -v r2=$rep2_count 'BEGIN {printf "%.2f", s*100/r2}')
+            window50_ratio_ba=$(awk -v w=$window50_ba -v r2=$rep2_count 'BEGIN {printf "%.2f", w*100/r2}')
+            window100_ratio_ba=$(awk -v w=$window100_ba -v r2=$rep2_count 'BEGIN {printf "%.2f", w*100/r2}')
+        else
+            strict_ratio_ba="0.00"
+            window50_ratio_ba="0.00"
+            window100_ratio_ba="0.00"
+        fi
+        
+        # 格式化为 a%/b%
+        strict_ratio="${strict_ratio_ab}%/${strict_ratio_ba}%"
+        window50_ratio="${window50_ratio_ab}%/${window50_ratio_ba}%"
+        window100_ratio="${window100_ratio_ab}%/${window100_ratio_ba}%"
+        
+        # 显示overlap总数（使用a vs b的结果，因为两者应该相同）
+        strict_total=$strict_ab
+        window50_total=$window50_ab
+        window100_total=$window100_ab
+        
+        printf "%-25s %-8s %-8s %-8s %-8s %-8s %-15s %-15s %-15s\n" \
+            "${variety}-IP" "$rep1_count" "$rep2_count" "$strict_total" "$window50_total" "$window100_total" \
+            "$strict_ratio" "$window50_ratio" "$window100_ratio"
     fi
 done
+
+# deeptools可视化（仅绘制热图）
+vim deeptools_four_panel_full.sh
+#!/bin/bash
+
+DEEPTOOLS_DIR="/data/mshe/rloopData/deeptools/four_panel"
+BIGWIG_DIR="/data/mshe/rloopData/deeptools/bigwigs"
+REGIONS_DIR="/data/mshe/rloopData/q0_01_macs3_results_full"
+mkdir -p "$DEEPTOOLS_DIR"
+
+# 使用HX3-IP的peak作为参考区域（重复性最好）
+awk -v OFS='\t' '{print $1, $2-2000, $3+2000, $4, $5}' "${REGIONS_DIR}/HX3-1-IP_x800_bw2_q0_01_nomodel.macs3_summits.bed" > "${DEEPTOOLS_DIR}/HX3_reference_regions_2kb.bed"
+REF_PEAKS="${DEEPTOOLS_DIR}/HX3_reference_regions_2kb.bed"
+
+# 为每个品种创建四面板热图
+for variety in HC22 HH43 HX3 Wm82 ZH13; do
+    echo "处理品种: $variety"
+    
+    # 定义四个样本的bigWig文件
+    declare -a bw_files=(
+        "${BIGWIG_DIR}/${variety}-1-input_x800_full.bw"
+        "${BIGWIG_DIR}/${variety}-2-input_x800_full.bw"
+        "${BIGWIG_DIR}/${variety}-1-IP_x800_full.bw" 
+        "${BIGWIG_DIR}/${variety}-2-IP_x800_full.bw"
+    )
+    
+    # 样本标签
+    declare -a sample_labels=(
+        "${variety}-Input-Rep1"
+        "${variety}-Input-Rep2" 
+        "${variety}-IP-Rep1"
+        "${variety}-IP-Rep2"
+    )
+    
+    # 计算矩阵
+    computeMatrix reference-point \
+        --referencePoint center \
+        -b 2000 -a 2000 \
+        -R "$REF_PEAKS" \
+        -S "${bw_files[@]}" \
+        --missingDataAsZero \
+	-p 10 \
+        -o "${DEEPTOOLS_DIR}/${variety}_four_panel_matrix.gz" \
+        --outFileNameMatrix "${DEEPTOOLS_DIR}/${variety}_four_panel_matrix.tab" \
+        --outFileSortedRegions "${DEEPTOOLS_DIR}/${variety}_four_panel_regions.bed"
+    
+    # 检查矩阵是否成功生成
+    if [ ! -f "${DEEPTOOLS_DIR}/${variety}_four_panel_matrix.gz" ]; then
+        echo "错误: 矩阵生成失败 - ${variety}"
+        continue
+    fi
+
+    # 绘制四面板热图
+    plotHeatmap \
+        -m "${DEEPTOOLS_DIR}/${variety}_four_panel_matrix.gz" \
+        -o "${DEEPTOOLS_DIR}/${variety}_four_panel_heatmap.pdf" \
+        --colorMap Blues \
+        --whatToShow 'heatmap and colorbar' \
+        --samplesLabel "${sample_labels[@]}" \
+        --plotTitle "${variety} R-loop Signal" \
+        --refPointLabel "Summit" \
+        --legendLocation "upper-right" \
+        --xAxisLabel "Distance from summit (bp)" \
+        --yAxisLabel "" \
+        --perGroup \
+	--dpi 300
+done
+
+chmod u+x deeptools_four_panel_full.sh
+./deeptools_four_panel_full.sh
+
+
+vim deeptools_four_panel_wRloop.sh
+#!/bin/bash
+
+DEEPTOOLS_DIR="/data/mshe/rloopData/deeptools/four_panel_wRloop"
+BIGWIG_DIR="/data/mshe/rloopData/deeptools/bigwigs"
+REGIONS_DIR="/data/mshe/rloopData/q0_01_macs3_results_wRloop"
+mkdir -p "$DEEPTOOLS_DIR"
+
+# wRloop的HX3-1-IP作为参考区域
+awk -v OFS='\t' '{if($2-2000 < 0) $2=0; else $2=$2-2000; $3=$3+2000; print $1, $2, $3, $4, $5}' \
+    "${REGIONS_DIR}/HX3-1-IP_x800_bw2_wRloop_q0_01_nomodel.macs3_summits.bed" \
+    > "${DEEPTOOLS_DIR}/HX3_wRloop_reference_regions_2kb.bed"
+REF_PEAKS="${DEEPTOOLS_DIR}/HX3_wRloop_reference_regions_2kb.bed"
+# 为每个品种创建四面板热图
+for variety in HC22 HH43 HX3 Wm82 ZH13; do
+    echo "处理品种: $variety"
+    
+    # 定义四个样本的bigWig文件
+    declare -a bw_files=(
+        "${BIGWIG_DIR}/${variety}-1-input_x800_wRloop.bw"
+        "${BIGWIG_DIR}/${variety}-2-input_x800_wRloop.bw"
+        "${BIGWIG_DIR}/${variety}-1-IP_x800_wRloop.bw" 
+        "${BIGWIG_DIR}/${variety}-2-IP_x800_wRloop.bw"
+    )
+    
+    # 样本标签
+    declare -a sample_labels=(
+        "${variety}-Input-Rep1"
+        "${variety}-Input-Rep2" 
+        "${variety}-IP-Rep1"
+        "${variety}-IP-Rep2"
+    )
+    
+    # 计算矩阵
+    computeMatrix reference-point \
+        --referencePoint center \
+        -b 2000 -a 2000 \
+        -R "$REF_PEAKS" \
+        -S "${bw_files[@]}" \
+        --missingDataAsZero \
+	    -p 10 \
+        -o "${DEEPTOOLS_DIR}/${variety}_four_panel_wRloop_matrix.gz" \
+        --outFileNameMatrix "${DEEPTOOLS_DIR}/${variety}_four_panel_wRloop_matrix.tab" \
+        --outFileSortedRegions "${DEEPTOOLS_DIR}/${variety}_four_panel_wRloop_regions.bed"
+    
+    # 检查矩阵是否成功生成
+    if [ ! -f "${DEEPTOOLS_DIR}/${variety}_four_panel_wRloop_matrix.gz" ]; then
+        echo "错误: 矩阵生成失败 - ${variety}"
+        continue
+    fi
+
+    # 绘制四面板热图
+    plotHeatmap \
+        -m "${DEEPTOOLS_DIR}/${variety}_four_panel_wRloop_matrix.gz" \
+        -o "${DEEPTOOLS_DIR}/${variety}_four_panel_wRloop_heatmap.pdf" \
+        --colorMap Blues \
+        --whatToShow 'heatmap and colorbar' \
+        --samplesLabel "${sample_labels[@]}" \
+        --plotTitle "${variety} wRloop Signal" \
+        --refPointLabel "Summit" \
+        --legendLocation "upper-right" \
+        --xAxisLabel "Distance from summit (bp)" \
+        --yAxisLabel "" \
+        --perGroup \
+	--dpi 300
+done
+
+chmod u+x deeptools_four_panel_wRloop.sh
+./deeptools_four_panel_wRloop.sh
+
+
+vim deeptools_four_panel_cRloop.sh
+#!/bin/bash
+
+DEEPTOOLS_DIR="/data/mshe/rloopData/deeptools/four_panel_cRloop"
+BIGWIG_DIR="/data/mshe/rloopData/deeptools/bigwigs"
+REGIONS_DIR="/data/mshe/rloopData/q0_01_macs3_results_cRloop"
+mkdir -p "$DEEPTOOLS_DIR"
+
+# cRloop的HX3-1-IP作为参考区域
+awk -v OFS='\t' '{if($2-2000 < 0) $2=0; else $2=$2-2000; $3=$3+2000; print $1, $2, $3, $4, $5}' \
+    "${REGIONS_DIR}/HX3-1-IP_x800_bw2_cRloop_q0_01_nomodel.macs3_summits.bed" \
+    > "${DEEPTOOLS_DIR}/HX3_cRloop_reference_regions_2kb.bed"
+REF_PEAKS="${DEEPTOOLS_DIR}/HX3_cRloop_reference_regions_2kb.bed"
+# 为每个品种创建四面板热图
+for variety in HC22 HH43 HX3 Wm82 ZH13; do
+    echo "处理品种: $variety"
+    
+    # 定义四个样本的bigWig文件
+    declare -a bw_files=(
+        "${BIGWIG_DIR}/${variety}-1-input_x800_cRloop.bw"
+        "${BIGWIG_DIR}/${variety}-2-input_x800_cRloop.bw"
+        "${BIGWIG_DIR}/${variety}-1-IP_x800_cRloop.bw" 
+        "${BIGWIG_DIR}/${variety}-2-IP_x800_cRloop.bw"
+    )
+    
+    # 样本标签
+    declare -a sample_labels=(
+        "${variety}-Input-Rep1"
+        "${variety}-Input-Rep2" 
+        "${variety}-IP-Rep1"
+        "${variety}-IP-Rep2"
+    )
+    
+    # 计算矩阵
+    computeMatrix reference-point \
+        --referencePoint center \
+        -b 2000 -a 2000 \
+        -R "$REF_PEAKS" \
+        -S "${bw_files[@]}" \
+        --missingDataAsZero \
+	    -p 10 \
+        -o "${DEEPTOOLS_DIR}/${variety}_four_panel_cRloop_matrix.gz" \
+        --outFileNameMatrix "${DEEPTOOLS_DIR}/${variety}_four_panel_cRloop_matrix.tab" \
+        --outFileSortedRegions "${DEEPTOOLS_DIR}/${variety}_four_panel_cRloop_regions.bed"
+    
+    # 检查矩阵是否成功生成
+    if [ ! -f "${DEEPTOOLS_DIR}/${variety}_four_panel_cRloop_matrix.gz" ]; then
+        echo "错误: 矩阵生成失败 - ${variety}"
+        continue
+    fi
+
+    # 绘制四面板热图
+    plotHeatmap \
+        -m "${DEEPTOOLS_DIR}/${variety}_four_panel_cRloop_matrix.gz" \
+        -o "${DEEPTOOLS_DIR}/${variety}_four_panel_cRloop_heatmap.pdf" \
+        --colorMap Blues \
+        --whatToShow 'heatmap and colorbar' \
+        --samplesLabel "${sample_labels[@]}" \
+        --plotTitle "${variety} cRloop Signal" \
+        --refPointLabel "Summit" \
+        --legendLocation "upper-right" \
+        --xAxisLabel "Distance from summit (bp)" \
+        --yAxisLabel "" \
+        --perGroup \
+	--dpi 300
+done
+
+chmod u+x deeptools_four_panel_cRloop.sh
+./deeptools_four_panel_cRloop.sh
+
