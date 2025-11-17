@@ -495,3 +495,155 @@ done
 chmod u+x deeptools_four_panel_cRloop.sh
 ./deeptools_four_panel_cRloop.sh
 
+intervene venn -i /data/mshe/rloopData/q0_01_macs3_results_wRloop/HC22-1-IP_x800_bw2_wRloop_q0_01_nomodel.macs3_peaks.narrowPeak \
+/data/mshe/rloopData/q0_01_macs3_results_wRloop/HC22-2-IP_x800_bw2_wRloop_q0_01_nomodel.macs3_peaks.narrowPeak \
+/data/mshe/rloopData/q0_01_macs3_results_cRloop/HC22-1-IP_x800_bw2_cRloop_q0_01_nomodel.macs3_peaks.narrowPeak \
+/data/mshe/rloopData/q0_01_macs3_results_cRloop/HC22-2-IP_x800_bw2_cRloop_q0_01_nomodel.macs3_peaks.narrowPeak \
+--names wRloop_rep1,wRloop_rep2,cRloop_rep1,cRloop_rep2 --output intervene_results --figtype pdf --dpi 300
+mv /data/mshe/rloopData/intervene_results/Intervene_venn.pdf /data/mshe/rloopData/intervene_results/HC22-IP_wRloop_cRloop_venn.pdf
+intervene venn -i /data/mshe/rloopData/q0_01_macs3_results_wRloop/HH43-1-IP_x800_bw2_wRloop_q0_01_nomodel.macs3_peaks.narrowPeak \
+/data/mshe/rloopData/q0_01_macs3_results_wRloop/HH43-2-IP_x800_bw2_wRloop_q0_01_nomodel.macs3_peaks.narrowPeak \
+/data/mshe/rloopData/q0_01_macs3_results_cRloop/HH43-1-IP_x800_bw2_cRloop_q0_01_nomodel.macs3_peaks.narrowPeak \
+/data/mshe/rloopData/q0_01_macs3_results_cRloop/HH43-2-IP_x800_bw2_cRloop_q0_01_nomodel.macs3_peaks.narrowPeak \
+--names wRloop_rep1,wRloop_rep2,cRloop_rep1,cRloop_rep2 --output intervene_results --figtype pdf --dpi 300
+mv /data/mshe/rloopData/intervene_results/Intervene_venn.pdf /data/mshe/rloopData/intervene_results/HH43-IP_wRloop_cRloop_venn.pdf
+intervene venn -i /data/mshe/rloopData/q0_01_macs3_results_wRloop/HX3-1-IP_x800_bw2_wRloop_q0_01_nomodel.macs3_peaks.narrowPeak \
+/data/mshe/rloopData/q0_01_macs3_results_wRloop/HX3-2-IP_x800_bw2_wRloop_q0_01_nomodel.macs3_peaks.narrowPeak \
+/data/mshe/rloopData/q0_01_macs3_results_cRloop/HX3-1-IP_x800_bw2_cRloop_q0_01_nomodel.macs3_peaks.narrowPeak \
+/data/mshe/rloopData/q0_01_macs3_results_cRloop/HX3-2-IP_x800_bw2_cRloop_q0_01_nomodel.macs3_peaks.narrowPeak \
+--names wRloop_rep1,wRloop_rep2,cRloop_rep1,cRloop_rep2 --output intervene_results --figtype pdf --dpi 300
+mv /data/mshe/rloopData/intervene_results/Intervene_venn.pdf /data/mshe/rloopData/intervene_results/HX3-IP_wRloop_cRloop_venn.pdf
+intervene venn -i /data/mshe/rloopData/q0_01_macs3_results_wRloop/Wm82-1-IP_x800_bw2_wRloop_q0_01_nomodel.macs3_peaks.narrowPeak \
+/data/mshe/rloopData/q0_01_macs3_results_wRloop/Wm82-2-IP_x800_bw2_wRloop_q0_01_nomodel.macs3_peaks.narrowPeak \
+/data/mshe/rloopData/q0_01_macs3_results_cRloop/Wm82-1-IP_x800_bw2_cRloop_q0_01_nomodel.macs3_peaks.narrowPeak \
+/data/mshe/rloopData/q0_01_macs3_results_cRloop/Wm82-2-IP_x800_bw2_cRloop_q0_01_nomodel.macs3_peaks.narrowPeak \
+--names wRloop_rep1,wRloop_rep2,cRloop_rep1,cRloop_rep2 --output intervene_results --figtype pdf --dpi 300
+mv /data/mshe/rloopData/intervene_results/Intervene_venn.pdf /data/mshe/rloopData/intervene_results/Wm82-IP_wRloop_cRloop_venn.pdf
+intervene venn -i /data/mshe/rloopData/q0_01_macs3_results_wRloop/ZH13-1-IP_x800_bw2_wRloop_q0_01_nomodel.macs3_peaks.narrowPeak \
+/data/mshe/rloopData/q0_01_macs3_results_wRloop/ZH13-2-IP_x800_bw2_wRloop_q0_01_nomodel.macs3_peaks.narrowPeak \
+/data/mshe/rloopData/q0_01_macs3_results_cRloop/ZH13-1-IP_x800_bw2_cRloop_q0_01_nomodel.macs3_peaks.narrowPeak \
+/data/mshe/rloopData/q0_01_macs3_results_cRloop/ZH13-2-IP_x800_bw2_cRloop_q0_01_nomodel.macs3_peaks.narrowPeak \
+--names wRloop_rep1,wRloop_rep2,cRloop_rep1,cRloop_rep2 --output intervene_results --figtype pdf --dpi 300
+mv /data/mshe/rloopData/intervene_results/Intervene_venn.pdf /data/mshe/rloopData/intervene_results/ZH13-IP_wRloop_cRloop_venn.pdf
+
+
+vim create_all_genes_bed.sh
+#!/bin/bash
+
+GFF_FILE="/data/mshe/rloopData/Gmax_508_Wm82.a4.v1.gene.gff3"
+ANNOTATION_DIR="/data/mshe/rloopData/annotation"
+mkdir -p "$ANNOTATION_DIR"
+
+echo "提取基因信息..."
+awk '$3 == "gene" || $3 == "mRNA"' "$GFF_FILE" | \
+    awk -v OFS='\t' '{
+        # 提取ID
+        split($9, attr, ";");
+        id = "";
+        for(i in attr) {
+            if(attr[i] ~ /^ID=/) {
+                split(attr[i], id_part, "=");
+                id = id_part[2];
+                break;
+            }
+        }
+        # 输出BED格式：chr, start, end, id, score, strand
+        print $1, $4-1, $5, id, ".", $7
+    }' > "${ANNOTATION_DIR}/all_genes.bed"
+
+echo "分离正负链基因"
+awk '$6 == "+"' "${ANNOTATION_DIR}/all_genes.bed" > "${ANNOTATION_DIR}/genes_plus.bed"
+awk '$6 == "-"' "${ANNOTATION_DIR}/all_genes.bed" > "${ANNOTATION_DIR}/genes_minus.bed"
+
+echo "基因统计:"
+echo "正链基因: $(wc -l < ${ANNOTATION_DIR}/genes_plus.bed)"
+echo "负链基因: $(wc -l < ${ANNOTATION_DIR}/genes_minus.bed)"
+echo "总计: $(wc -l < ${ANNOTATION_DIR}/all_genes.bed)"
+chmod u+x create_all_genes_bed.sh
+./create_all_genes_bed.sh
+
+vim sense_anti_classify.sh
+#!/bin/bash
+
+WRLOOP_DIR="/data/mshe/rloopData/q0_01_macs3_results_wRloop"
+CRLOOP_DIR="/data/mshe/rloopData/q0_01_macs3_results_cRloop"
+ANNOTATION_DIR="/data/mshe/rloopData/annotation"
+OUTPUT_DIR="/data/mshe/rloopData/strand_specific_peaks"
+mkdir -p "$OUTPUT_DIR"
+
+# 为每个品种分类sense和anti peaks
+for wrloop_peaks in ${WRLOOP_DIR}/*_peaks.narrowPeak; do
+    sample=$(basename "$wrloop_peaks" _x800_bw2_wRloop_q0_01_nomodel.macs3_peaks.narrowPeak)
+    if [ ! -f "$wrloop_peaks" ]; then
+        echo "警告: wRloop peaks文件不存在 - $wrloop_peaks"
+        continue
+    fi
+  echo "处理wRloop样本: $sample"
+  echo "识别Sense R-loops..."
+    # wRloop + 正链基因 → sense
+    bedtools intersect -a "$wrloop_peaks" -b "${ANNOTATION_DIR}/genes_plus.bed" -wa -u > \
+        "${OUTPUT_DIR}/${sample}_x800_wRloop_sense.bed"
+    # wRloop + 负链基因 → anti-sense
+    bedtools intersect -a "$wrloop_peaks" -b "${ANNOTATION_DIR}/genes_minus.bed" -wa -u > \
+        "${OUTPUT_DIR}/${sample}_x800_wRloop_antisense.bed"
+    echo "  Sense: $(wc -l < ${OUTPUT_DIR}/${sample}_x800_wRloop_sense.bed)"
+    echo "  Anti-sense: $(wc -l < ${OUTPUT_DIR}/${sample}_x800_wRloop_antisense.bed)"
+done
+
+for crloop_peaks in ${CRLOOP_DIR}/*_peaks.narrowPeak; do
+    sample=$(basename "$crloop_peaks" _x800_bw2_cRloop_q0_01_nomodel.macs3_peaks.narrowPeak)
+    if [ ! -f "$crloop_peaks" ]; then
+        echo "警告: cRloop peaks文件不存在 - $crloop_peaks"
+        continue
+    fi
+  echo "处理cRloop样本: $sample"
+  echo "识别Sense R-loops..."
+    # cRloop + 负链基因 → sense
+    bedtools intersect -a "$crloop_peaks" -b "${ANNOTATION_DIR}/genes_minus.bed" -wa -u > \
+        "${OUTPUT_DIR}/${sample}_x800_cRloop_sense.bed"
+    # cRloop + 正链基因 → anti-sense
+    bedtools intersect -a "$crloop_peaks" -b "${ANNOTATION_DIR}/genes_plus.bed" -wa -u > \
+        "${OUTPUT_DIR}/${sample}_x800_cRloop_antisense.bed"
+    echo "  Sense: $(wc -l < ${OUTPUT_DIR}/${sample}_x800_cRloop_sense.bed)"
+    echo "  Anti-sense: $(wc -l < ${OUTPUT_DIR}/${sample}_x800_cRloop_antisense.bed)"
+done
+
+# 然后按品种合并
+for variety in HC22 HH43 HX3 Wm82 ZH13; do
+    echo "合并品种: $variety"
+    
+    # 合并sense peaks
+    cat "${OUTPUT_DIR}/${variety}"-*-IP_x800_wRloop_sense.bed \
+        "${OUTPUT_DIR}/${variety}"-*-IP_x800_cRloop_sense.bed 2>/dev/null | \
+        sort -k1,1 -k2,2n | bedtools merge -i - > \
+        "${OUTPUT_DIR}/${variety}_IP_sense_peaks.bed"
+    
+    cat "${OUTPUT_DIR}/${variety}"-*-input_x800_wRloop_sense.bed \
+        "${OUTPUT_DIR}/${variety}"-*-input_x800_cRloop_sense.bed 2>/dev/null | \
+        sort -k1,1 -k2,2n | bedtools merge -i - > \
+        "${OUTPUT_DIR}/${variety}_input_sense_peaks.bed"
+    # 合并anti-sense peaks
+    cat "${OUTPUT_DIR}/${variety}"-*-IP_x800_wRloop_antisense.bed \
+        "${OUTPUT_DIR}/${variety}"-*-IP_x800_cRloop_antisense.bed 2>/dev/null | \
+        sort -k1,1 -k2,2n | bedtools merge -i - > \
+        "${OUTPUT_DIR}/${variety}_IP_antisense_peaks.bed"
+    
+    cat "${OUTPUT_DIR}/${variety}"-*-input_x800_wRloop_antisense.bed \
+        "${OUTPUT_DIR}/${variety}"-*-input_x800_cRloop_antisense.bed 2>/dev/null | \
+        sort -k1,1 -k2,2n | bedtools merge -i - > \
+        "${OUTPUT_DIR}/${variety}_input_antisense_peaks.bed"
+
+    sense_IP_count=$(wc -l < "${OUTPUT_DIR}/${variety}_IP_sense_peaks.bed")
+    antisense_IP_count=$(wc -l < "${OUTPUT_DIR}/${variety}_IP_antisense_peaks.bed")
+    sense_input_count=$(wc -l < "${OUTPUT_DIR}/${variety}_input_sense_peaks.bed")
+    antisense_input_count=$(wc -l < "${OUTPUT_DIR}/${variety}_input_antisense_peaks.bed")
+
+    
+    echo "  Sense IP peaks: $sense_IP_count"
+    echo "  Anti-sense IP peaks: $antisense_IP_count"
+    echo "  Sense input peaks: $sense_input_count"
+    echo "  Anti-sense input peaks: $antisense_input_count"
+done
+
+chmod u+x sense_anti_classify.sh
+nohup ./sense_anti_classify.sh > sense_anti_classify.log 2>&1 &
