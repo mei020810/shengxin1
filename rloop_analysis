@@ -647,3 +647,82 @@ done
 
 chmod u+x sense_anti_classify.sh
 nohup ./sense_anti_classify.sh > sense_anti_classify.log 2>&1 &
+
+vim sense_anti_plot.sh
+#!/bin/bash
+
+DEEPTOOLS_DIR="/data/mshe/rloopData/deeptools/sense_anti_plot"
+BIGWIG_DIR="/data/mshe/rloopData/deeptools/bigwigs"
+PEAKS_DIR="/data/mshe/rloopData/strand_specific_peaks"
+mkdir -p "$DEEPTOOLS_DIR"
+
+# 先测试一个品种
+for variety in HC22 HH43 HX3 Wm82 ZH13; do
+    echo "处理品种: $variety"
+    
+    # 检查sense和anti peaks文件
+    if [ ! -f "${PEAKS_DIR}/${variety}_IP_sense_peaks.bed" ] || [ ! -f "${PEAKS_DIR}/${variety}_IP_antisense_peaks.bed" ]; then
+        echo "错误: 缺少sense或anti peaks文件 - ${variety}"
+        continue
+    fi
+    
+    # 准备参考区域（扩展为±2kb）
+    echo "准备参考区域..."
+    awk -v OFS='\t' '{if($2-2000 < 0) $2=0; else $2=$2-2000; $3=$3+2000; print $1, $2, $3, "sense_peak_"NR, "."}' \
+        "${PEAKS_DIR}/${variety}_IP_sense_peaks.bed" > \
+        "${DEEPTOOLS_DIR}/${variety}_IP_sense_regions_2kb.bed"
+    
+    awk -v OFS='\t' '{if($2-2000 < 0) $2=0; else $2=$2-2000; $3=$3+2000; print $1, $2, $3, "antisense_peak_"NR, "."}' \
+        "${PEAKS_DIR}/${variety}_IP_antisense_peaks.bed" > \
+        "${DEEPTOOLS_DIR}/${variety}_IP_antisense_regions_2kb.bed"
+    
+    # Sense R-loop热图
+    echo "=== 生成Sense R-loop热图 ==="
+    computeMatrix reference-point \
+        --referencePoint center \
+        -b 2000 -a 2000 \
+        -R "${DEEPTOOLS_DIR}/${variety}_IP_sense_regions_2kb.bed" \
+        -S "${BIGWIG_DIR}/${variety}-1-IP_x800_full.bw" \
+           "${BIGWIG_DIR}/${variety}-2-IP_x800_full.bw" \
+        --missingDataAsZero \
+        -o "${DEEPTOOLS_DIR}/${variety}_IP_sense_matrix.gz" \
+        -p 8
+    
+    plotHeatmap \
+        -m "${DEEPTOOLS_DIR}/${variety}_IP_sense_matrix.gz" \
+        -o "${DEEPTOOLS_DIR}/${variety}_IP_sense_heatmap.pdf" \
+        --colorMap Blues \
+        --samplesLabel "${variety}-IP-Rep1" "${variety}-IP-Rep2" \
+        --plotTitle "${variety} Sense R-loops" \
+        --refPointLabel "Summit" \
+        --xAxisLabel "Distance from summit (bp)" \
+        --perGroup \
+        --dpi 300
+    
+    # Anti-sense R-loop热图
+    echo "=== 生成Anti-sense R-loop热图 ==="
+    computeMatrix reference-point \
+        --referencePoint center \
+        -b 2000 -a 2000 \
+        -R "${DEEPTOOLS_DIR}/${variety}_IP_antisense_regions_2kb.bed" \
+        -S "${BIGWIG_DIR}/${variety}-1-IP_x800_full.bw" \
+           "${BIGWIG_DIR}/${variety}-2-IP_x800_full.bw" \
+        --missingDataAsZero \
+        -o "${DEEPTOOLS_DIR}/${variety}_IP_antisense_matrix.gz" \
+        -p 8
+    
+    plotHeatmap \
+        -m "${DEEPTOOLS_DIR}/${variety}_IP_antisense_matrix.gz" \
+        -o "${DEEPTOOLS_DIR}/${variety}_IP_antisense_heatmap.pdf" \
+        --colorMap Blues \
+        --samplesLabel "${variety}-IP-Rep1" "${variety}-IP-Rep2" \
+        --plotTitle "${variety} Anti-sense R-loops" \
+        --refPointLabel "Summit" \
+        --xAxisLabel "Distance from summit (bp)" \
+        --perGroup \
+        --dpi 300
+    
+    echo "完成: ${variety}"
+done
+chmod u+x sense_anti_plot.sh
+./sense_anti_plot.sh
