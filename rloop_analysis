@@ -726,3 +726,179 @@ for variety in HC22 HH43 HX3 Wm82 ZH13; do
 done
 chmod u+x sense_anti_plot.sh
 ./sense_anti_plot.sh
+
+vim sense_anti_bam.sh
+#!/bin/bash
+
+# 设置目录
+WRLOOP_BAM_DIR="/data/mshe/rloopData/bam_wRloop"
+CRLOOP_BAM_DIR="/data/mshe/rloopData/bam_cRloop"
+OUTPUT_DIR="/data/mshe/rloopData/sense_anti_bam"
+mkdir -p "$OUTPUT_DIR"
+
+# 处理wRloop样本
+for bam_file in ${WRLOOP_BAM_DIR}/*_x800_wRloop.sorted.bam; do
+    if [ ! -f "$bam_file" ]; then
+        echo "文件不存在，跳过: $bam_file"
+        continue
+    fi
+    
+    sample=$(basename "$bam_file" _x800_wRloop.sorted.bam)
+    echo "处理wRloop样本: $sample"
+    
+    # wRloop: sense = 正链 (RNA方向)
+    echo "  提取sense reads (正链)..."
+    samtools view -b -F 16 "$bam_file" > "${OUTPUT_DIR}/${sample}_x800_wRloop_sense.bam"
+    samtools index "${OUTPUT_DIR}/${sample}_x800_wRloop_sense.bam"
+    
+    # wRloop: antisense = 负链
+    echo "  提取antisense reads (负链)..."
+    samtools view -b -f 16 "$bam_file" > "${OUTPUT_DIR}/${sample}_x800_wRloop_antisense.bam"
+    samtools index "${OUTPUT_DIR}/${sample}_x800_wRloop_antisense.bam"
+    
+    # 统计reads数量
+    sense_count=$(samtools view -c "${OUTPUT_DIR}/${sample}_x800_wRloop_sense.bam")
+    antisense_count=$(samtools view -c "${OUTPUT_DIR}/${sample}_x800_wRloop_antisense.bam")
+    total_count=$(samtools view -c "$bam_file")
+    
+    echo "  Sense reads: $sense_count"
+    echo "  Antisense reads: $antisense_count"
+    echo "  总计: $total_count"
+    echo "  验证: $((sense_count + antisense_count))"
+done
+
+# 处理cRloop样本
+for bam_file in ${CRLOOP_BAM_DIR}/*_x800_cRloop.sorted.bam; do
+    if [ ! -f "$bam_file" ]; then
+        echo "文件不存在，跳过: $bam_file"
+        continue
+    fi
+    
+    sample=$(basename "$bam_file" _x800_cRloop.sorted.bam)
+    echo "处理cRloop样本: $sample"
+    
+    # cRloop: sense = 负链 (互补DNA方向)
+    echo "  提取sense reads (负链)..."
+    samtools view -b -f 16 "$bam_file" > "${OUTPUT_DIR}/${sample}_x800_cRloop_sense.bam"
+    samtools index "${OUTPUT_DIR}/${sample}_x800_cRloop_sense.bam"
+    
+    # cRloop: antisense = 正链
+    echo "  提取antisense reads (正链)..."
+    samtools view -b -F 16 "$bam_file" > "${OUTPUT_DIR}/${sample}_x800_cRloop_antisense.bam"
+    samtools index "${OUTPUT_DIR}/${sample}_x800_cRloop_antisense.bam"
+    
+    # 统计reads数量
+    sense_count=$(samtools view -c "${OUTPUT_DIR}/${sample}_x800_cRloop_sense.bam")
+    antisense_count=$(samtools view -c "${OUTPUT_DIR}/${sample}_x800_cRloop_antisense.bam")
+    total_count=$(samtools view -c "$bam_file")
+    
+    echo "  Sense reads: $sense_count"
+    echo "  Antisense reads: $antisense_count"
+    echo "  总计: $total_count"
+    echo "  验证: $((sense_count + antisense_count))"
+done
+
+echo "所有BAM文件分离完成！"
+echo "输出目录: $OUTPUT_DIR"
+chmod u+x sense_anti_bam.sh
+nohup ./sense_anti_bam.log 2>&1 &
+
+vim merge_sense_anti_bam.sh
+#!/bin/bash
+
+# 设置目录
+BAM_DIR="/data/mshe/rloopData/sense_anti_bam"
+MERGED_DIR="/data/mshe/rloopData/merged_strand_specific"
+mkdir -p "$MERGED_DIR"
+
+# 品种列表
+varieties=("HC22" "HH43" "HX3" "Wm82" "ZH13")
+
+# 合并函数
+merge_samples() {
+    local variety=$1
+    local type=$2  # IP or input
+    local strand=$3  # sense or antisense
+    
+    echo "合并 $variety $type $strand..."
+    
+    # 收集所有相关的BAM文件
+    wRloop_files=(${BAM_DIR}/${variety}-*-${type}_x800_wRloop_${strand}.bam)
+    cRloop_files=(${BAM_DIR}/${variety}-*-${type}_x800_cRloop_${strand}.bam)
+    
+    # 检查文件是否存在
+    all_files=()
+    for file in "${wRloop_files[@]}" "${cRloop_files[@]}"; do
+        if [ -f "$file" ]; then
+            all_files+=("$file")
+        fi
+    done
+    
+    if [ ${#all_files[@]} -eq 0 ]; then
+        echo "  警告: 没有找到 $variety $type $strand 的BAM文件"
+        return
+    fi
+    
+    # 合并BAM文件
+    output_bam="${MERGED_DIR}/${variety}_${type}_${strand}.bam"
+    samtools merge -f "$output_bam" "${all_files[@]}"
+    
+    # 创建索引
+    samtools index "$output_bam"
+    
+    # 统计reads数量
+    read_count=$(samtools view -c "$output_bam")
+    echo "  合并后reads数量: $read_count"
+}
+
+# 主循环
+for variety in "${varieties[@]}"; do
+    echo "=== 处理品种: $variety ==="
+    
+    # 合并IP样本
+    merge_samples "$variety" "IP" "sense"
+    merge_samples "$variety" "IP" "antisense"
+    
+    # 合并input样本
+    merge_samples "$variety" "input" "sense"
+    merge_samples "$variety" "input" "antisense"
+done
+
+# 生成合并后的bw文件
+echo "=== 生成合并后的BigWig文件 ==="
+for bam_file in ${MERGED_DIR}/*.bam; do
+    if [ ! -f "$bam_file" ]; then
+        continue
+    fi
+    
+    sample=$(basename "$bam_file" .bam)
+    echo "生成 $sample.bw"
+    
+    bamCoverage -b "$bam_file" \
+        -o "${MERGED_DIR}/${sample}.bw" \
+        --binSize 10 \
+        --normalizeUsing RPKM \
+        --numberOfProcessors 4
+done
+
+# 最终统计
+echo "=== 最终统计 ==="
+for variety in "${varieties[@]}"; do
+    echo "$variety:"
+    for type in "IP" "input"; do
+        for strand in "sense" "antisense"; do
+            bam_file="${MERGED_DIR}/${variety}_${type}_${strand}.bam"
+            if [ -f "$bam_file" ]; then
+                count=$(samtools view -c "$bam_file")
+                echo "  $type $strand: $count reads"
+            fi
+        done
+    done
+done
+
+echo "合并完成！输出目录: $MERGED_DIR"
+echo "生成的文件:"
+ls -lh ${MERGED_DIR}/*.bam
+ls -lh ${MERGED_DIR}/*.bw 2>/dev/null || echo "BigWig文件生成中..."
+chmod u+x merge_sense_anti_bam.sh
+nohup ./merge_sense_anti_bam.sh > merge_sense_anti_bam.log 2>&1 &
