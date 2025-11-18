@@ -902,3 +902,129 @@ ls -lh ${MERGED_DIR}/*.bam
 ls -lh ${MERGED_DIR}/*.bw 2>/dev/null || echo "BigWig文件生成中..."
 chmod u+x merge_sense_anti_bam.sh
 nohup ./merge_sense_anti_bam.sh > merge_sense_anti_bam.log 2>&1 &
+
+#合并重复样本的bam
+vim merge_rep_bam.sh
+#!/bin/bash
+WRLOOP_DIR="/data/mshe/rloopData/bam_wRloop"
+CRLOOP_DIR="/data/mshe/rloopData/bam_cRloop"
+OUTPUT_DIR="/data/mshe/rloopData/merge_rep_bam"
+mkdir -p ${OUTPUT_DIR}
+
+varieties=("HC22" "HH43" "HX3" "Wm82" "ZH13")
+merge_samples() {
+    local base_dir=$1
+    local suffix=$2
+    
+    echo "正在处理目录: $base_dir"
+    
+    for variety in "${varieties[@]}"; do
+        echo "处理品种: $variety"
+        
+        # 合并IP样本
+        ip_files=()
+        for i in 1 2; do
+            file="${base_dir}/${variety}-${i}-IP_x800_${suffix}.sorted.bam"
+            if [[ -f "$file" ]]; then
+                ip_files+=("$file")
+            fi
+        done
+        
+        if [[ ${#ip_files[@]} -gt 0 ]]; then
+            echo "合并IP样本: ${ip_files[*]}"
+            samtools merge -@ 8 ${OUTPUT_DIR}/${variety}_IP_${suffix}.merged.bam ${ip_files[@]}
+            samtools index -@ 8 ${OUTPUT_DIR}/${variety}_IP_${suffix}.merged.bam
+        fi
+        
+        # 合并input样本
+        input_files=()
+        for i in 1 2; do
+            file="${base_dir}/${variety}-${i}-input_x800_${suffix}.sorted.bam"
+            if [[ -f "$file" ]]; then
+                input_files+=("$file")
+            fi
+        done
+        
+        if [[ ${#input_files[@]} -gt 0 ]]; then
+            echo "合并input样本: ${input_files[*]}"
+            samtools merge -@ 8 ${OUTPUT_DIR}/${variety}_input_${suffix}.merged.bam ${input_files[@]}
+            samtools index -@ 8 ${OUTPUT_DIR}/${variety}_input_${suffix}.merged.bam
+        fi
+    done
+}
+
+# 处理wRloop样本
+echo "=== 开始合并wRloop样本 ==="
+merge_samples "$WRLOOP_DIR" "wRloop"
+
+# 处理cRloop样本
+echo "=== 开始合并cRloop样本 ==="
+merge_samples "$CRLOOP_DIR" "cRloop"
+
+echo "=== 合并完成 ==="
+echo "输出目录: $OUTPUT_DIR"
+ls -la $OUTPUT_DIR
+chmod +x merge_rep_bam.sh
+./merge_rep_bam.sh
+
+vim macs3_peakcall_merge_wcRloop.sh
+#!/bin/bash
+echo "开始时间：$(date)"
+
+BAM_DIR="/data/mshe/rloopData/merge_rep_bam"
+BW_DIR="/data/mshe/rloopData/merge_rep_bam/bigwigs"
+OUTPUT_DIR="/data/mshe/rloopData/macs3_results_merge_wcRloop"
+mkdir -p ${OUTPUT_DIR}
+mkdir -p ${BW_DIR}
+#生成bw文件
+for bam_file in ${BAM_DIR}/*.bam; do
+    if [ ! -f "$bam_file" ]; then
+        continue
+    fi
+    sample=$(basename "$bam_file" .merge.bam)
+    echo "生成 $sample.bw"
+    bamCoverage -b "$bam_file" \
+        -o "${BW_DIR}/${sample}.bw" \
+        --binSize 10 \
+        --normalizeUsing RPKM \
+        --numberOfProcessors 4
+done
+
+echo "wRloop peak calling..."
+for bam_file in ${BAM_DIR}/*_wRloop.merged.bam; do
+    sample=$(basename "$bam_file" _wRloop.merged.bam)  
+    
+    # 检查是否已经运行过
+    if [ -f "${OUTPUT_DIR}/${sample}_x800_bw2_wRloop_nomodel.macs3_peaks.xls" ]; then  
+        echo "跳过已处理的样本：$sample"
+        continue
+    fi
+    
+    echo "处理样本：$sample"
+    macs3 callpeak -t "$bam_file" \
+    --extsize 200 -q 0.05 \
+    --nomodel --SPMR -f BAM \
+    -g 1e+9 -B \
+    -n "${OUTPUT_DIR}/${sample}_x800_bw2_wRloop_nomodel.macs3"
+done
+
+echo "cRloop peak calling..."
+for bam_file in ${BAM_DIR}/*_cRloop.merged.bam; do
+    sample=$(basename "$bam_file" _cRloop.merged.bam)  
+    
+    # 检查是否已经运行过
+    if [ -f "${OUTPUT_DIR}/${sample}_x800_bw2_cRloop_nomodel.macs3_peaks.xls" ]; then  
+        echo "跳过已处理的样本：$sample"
+        continue
+    fi
+    
+    echo "处理样本：$sample"
+    macs3 callpeak -t "$bam_file" \
+    --extsize 200 -q 0.05 \
+    --nomodel --SPMR -f BAM \
+    -g 1e+9 -B \
+    -n "${OUTPUT_DIR}/${sample}_x800_bw2_cRloop_nomodel.macs3"
+done
+echo "结束时间：$(date)"
+chmod u+x macs3_peakcall_merge_wcRloop.sh
+./macs3_peakcall_merge_wcRloop.sh
