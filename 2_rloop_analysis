@@ -908,7 +908,7 @@ vim merge_rep_bam.sh
 #!/bin/bash
 WRLOOP_DIR="/data/mshe/rloopData/bam_wRloop"
 CRLOOP_DIR="/data/mshe/rloopData/bam_cRloop"
-OUTPUT_DIR="/data/mshe/rloopData/merge_rep_bam"
+OUTPUT_DIR="/data/mshe/rloopData/merge_rep_bam"  #已更名为merge_rep_bam_wcRloop
 mkdir -p ${OUTPUT_DIR}
 
 varieties=("HC22" "HH43" "HX3" "Wm82" "ZH13")
@@ -971,7 +971,7 @@ vim macs3_peakcall_merge_wcRloop.sh
 #!/bin/bash
 echo "开始时间：$(date)"
 
-BAM_DIR="/data/mshe/rloopData/merge_rep_bam"
+BAM_DIR="/data/mshe/rloopData/merge_rep_bam"  # 文件夹名字已更改为merge_rep_bam_wcRloop
 BW_DIR="/data/mshe/rloopData/merge_rep_bam/bigwigs"
 OUTPUT_DIR="/data/mshe/rloopData/macs3_results_merge_wcRloop"
 mkdir -p ${OUTPUT_DIR}
@@ -1028,3 +1028,115 @@ done
 echo "结束时间：$(date)"
 chmod u+x macs3_peakcall_merge_wcRloop.sh
 ./macs3_peakcall_merge_wcRloop.sh
+
+vim merge_macs3_full.sh
+#!/bin/bash
+# 设置路径
+PICARD_DIR="/data/mshe/rloopData/picard"
+MERGED_DIR="/data/mshe/rloopData/merged_bam_full"
+BW_DIR="/data/mshe/rloopData/merged_bam_full/bigwigs"
+PEAKS_DIR="/data/mshe/rloopData/macs3_results_merge_full"
+
+# 创建输出目录
+mkdir -p $MERGED_DIR $BW_DIR $PEAKS_DIR
+
+# 定义品种列表
+varieties=("HC22" "HH43" "HX3" "Wm82" "ZH13")
+echo "=== 开始合并重复样本 ==="
+    for variety in "${varieties[@]}"; do
+        echo "处理品种: $variety"
+        
+        # 合并IP样本
+        ip_files=()
+        for i in 1 2; do
+            file="${PICARD_DIR}/${variety}-${i}-IP_x800_picard.bam"
+            if [[ -f "$file" ]]; then
+                ip_files+=("$file")
+                echo "找到IP文件: $file"
+            else
+                echo "警告: 未找到文件 $file"
+            fi
+        done
+        
+        if [[ ${#ip_files[@]} -eq 2 ]]; then
+            echo "合并IP样本: ${ip_files[*]}"
+            samtools merge -f -@ 8 ${MERGED_DIR}/${variety}_IP_merged.bam ${ip_files[@]}
+            samtools index -@ 8 ${MERGED_DIR}/${variety}_IP_merged.bam
+            echo "已创建: ${MERGED_DIR}/${variety}_IP_merged.bam"
+        else
+            echo "错误: 找不到足够的IP文件 for $variety"
+        fi
+        
+        # 合并input样本
+        input_files=()
+        for i in 1 2; do
+            file="${PICARD_DIR}/${variety}-${i}-input_x800_picard.bam"
+            if [[ -f "$file" ]]; then
+                input_files+=("$file")
+                echo "找到input文件: $file"
+            else
+                echo "警告: 未找到文件 $file"
+            fi
+        done
+        
+        if [[ ${#input_files[@]} -eq 2 ]]; then
+            echo "合并input样本: ${input_files[*]}"
+            samtools merge -f -@ 8 ${MERGED_DIR}/${variety}_input_merged.bam ${input_files[@]}
+            samtools index -@ 8 ${MERGED_DIR}/${variety}_input_merged.bam
+            echo "已创建: ${MERGED_DIR}/${variety}_input_merged.bam"
+        else
+            echo "错误: 找不到足够的input文件 for $variety"
+        fi
+        echo "---"
+    done
+
+    echo "=== 开始生成bigWig文件 ==="
+    for variety in "${varieties[@]}"; do
+        echo "生成bw文件 for $variety"
+        
+        ip_bam="${MERGED_DIR}/${variety}_IP_merged.bam"
+        input_bam="${MERGED_DIR}/${variety}_input_merged.bam"
+        
+        if [[ -f "$ip_bam" ]]; then
+            bamCoverage -b $ip_bam \
+                -o ${BW_DIR}/${variety}_IP_full.bw \
+                --binSize 10 \
+                --normalizeUsing RPKM \
+                --numberOfProcessors 4
+            echo "已创建: ${BW_DIR}/${variety}_IP_full.bw"   
+                 else
+            echo "警告: 未找到IP BAM文件: $ip_bam"
+        fi
+        
+        if [[ -f "$input_bam" ]]; then
+            # 生成input的bigWig
+            bamCoverage -b $input_bam \
+                -o ${BW_DIR}/${variety}_input_full.bw \
+                --binSize 10 \
+                --normalizeUsing RPKM \
+                --numberOfProcessors 4
+            echo "已创建: ${BW_DIR}/${variety}_input_full.bw"
+        else
+            echo "警告: 未找到input BAM文件: $input_bam"
+        fi
+    done
+
+echo "=== 开始peak calling ==="
+for bam_file in ${MERGED_DIR}/*merged.bam; do
+    sample=$(basename "$bam_file" _merged.bam)  
+    
+    # 检查是否已经运行过
+    if [ -f "${PEAKS_DIR}/${sample}_x800_bw2_full_nomodel.macs3_peaks.xls" ]; then  
+        echo "跳过已处理的样本：$sample"
+        continue
+    fi
+    
+    echo "处理样本：$sample"
+    macs3 callpeak -t "$bam_file" \
+    --extsize 200 -q 0.05 \
+    --nomodel --SPMR -f BAM \
+    -g 1e+9 -B \
+    -n "${PEAKS_DIR}/${sample}_x800_bw2_full_nomodel.macs3"
+done
+chmod +x merge_macs3_full.sh
+nohup ./merge_macs3_full.sh > merge_macs3_full.log 2>&1 &
