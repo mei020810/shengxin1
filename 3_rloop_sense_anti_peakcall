@@ -1,0 +1,170 @@
+vim macs3_peakcall_sense_anti.sh
+#!/bin/bash
+echo "开始时间：$(date)"
+BAM_DIR=/data/mshe/rloopData/merged_strand_specific
+OUTPUT_DIR=/data/mshe/rloopData/macs3_results_sense_anti
+mkdir -p ${OUTPUT_DIR}
+echo "senseRloop peak calling..."
+for bam_file in ${BAM_DIR}/*_sense.bam; do
+	sample=$(basename "$bam_file" _sense.bam)
+	# 检查是否已经运行过
+	if [ -f "${OUTPUT_DIR}/${sample}_x800_bw2_sense_nomodel.macs3_peaks.xls" ]; then
+        	echo "跳过已处理的样本：$sample"
+        	continue
+	fi
+    echo "处理样本：$sample"
+    macs3 callpeak -t "$bam_file" \
+    --extsize 200 -q 0.05 \
+    --nomodel --SPMR -f BAM \
+    -g 1e+9 -B \
+    -n "${OUTPUT_DIR}/${sample}_x800_bw2_sense_nomodel.macs3"
+done
+echo "antisenseRloop peak calling..."
+for bam_file in ${BAM_DIR}/*_antisense.bam; do
+	sample=$(basename "$bam_file" _antisense.bam)
+	# 检查是否已经运行过
+	if [ -f "${OUTPUT_DIR}/${sample}_x800_bw2_antisense_nomodel.macs3_peaks.xls" ]; then
+        	echo "跳过已处理的样本：$sample"
+        	continue
+	fi
+    echo "处理样本：$sample"
+    macs3 callpeak -t "$bam_file" \
+    --extsize 200 -q 0.05 \
+    --nomodel --SPMR -f BAM \
+    -g 1e+9 -B \
+    -n "${OUTPUT_DIR}/${sample}_x800_bw2_antisense_nomodel.macs3"
+done
+echo "结束时间：$(date)"
+chmod u+x macs3_peakcall_sense_anti.sh
+nohup ./macs3_peakcall_sense_anti.sh > macs3_peakcall_sense_anti.log 2>&1 &
+
+vim heatmap_allregions.sh
+#!/bin/bash
+FULL_BW_DIR="/data/mshe/rloopData/merged_bam_full/bigwigs"
+WCRLOOP_BW_DIR="/data/mshe/rloopData/merge_rep_bam_wcRloop/bigwigs"
+BED_DIR="/data/mshe/rloopData/annotation"
+OUTPUT_DIR="/data/mshe/rloopData/deeptools/allgene_analysis"
+mkdir -p ${OUTPUT_DIR}
+echo "开始时间：$(date)"
+for varieties in "HC22" "HH43" "HX3" "Wm82" "ZH13" ; do
+echo "生成${varieties} IP的矩阵"
+    computeMatrix scale-regions \
+        -S "${FULL_BW_DIR}/${varieties}_IP_full.bw" "${WCRLOOP_BW_DIR}/${varieties}_IP_wRloop.merged.bam.bw" "${WCRLOOP_BW_DIR}/${varieties}_IP_cRloop.merged.bam.bw" \
+        -R "${BED_DIR}/all_genes.bed" "${BED_DIR}/genes_plus.bed" "${BED_DIR}/genes_minus.bed" \
+        -a 2000 -b 2000 \
+        --regionBodyLength 5000 \
+        --binSize 50 \
+        --missingDataAsZero \
+        -o ${OUTPUT_DIR}/${varieties}_IP_all_regions_matrix.gz \
+        --samplesLabel "Rloop" "wRloop" "cRloop" \
+	-p 10
+
+echo "生成${varieties} IP的热图"
+    plotHeatmap \
+        -m ${OUTPUT_DIR}/${varieties}_IP_all_regions_matrix.gz \
+        -o ${OUTPUT_DIR}/${varieties}_IP_combined_heatmap.pdf \
+        --colorMap RdYlBu_r \
+	--yMax 60 \
+	--zMin 0 --zMax 80 \
+        --plotTitle "${varieties} IP R-loop Signal" \
+        --regionsLabel "all gene" "sense" "antisense" \
+        --dpi 300
+
+echo "生成${varieties} input的矩阵"
+    computeMatrix scale-regions \
+        -S "${FULL_BW_DIR}/${varieties}_input_full.bw" "${WCRLOOP_BW_DIR}/${varieties}_input_wRloop.merged.bam.bw" "${WCRLOOP_BW_DIR}/${varieties}_input_cRloop.merged.bam.bw" \
+        -R "${BED_DIR}/all_genes.bed" "${BED_DIR}/genes_plus.bed" "${BED_DIR}/genes_minus.bed" \
+        -a 2000 -b 2000 \
+        --regionBodyLength 5000 \
+        --binSize 50 \
+        --missingDataAsZero \
+        -o ${OUTPUT_DIR}/${varieties}_input_all_regions_matrix.gz \
+        --samplesLabel "Rloop" "wRloop" "cRloop" \
+	-p 10
+
+echo "生成${varieties} input的热图"
+    plotHeatmap \
+        -m ${OUTPUT_DIR}/${varieties}_input_all_regions_matrix.gz \
+        -o ${OUTPUT_DIR}/${varieties}_input_combined_heatmap.pdf \
+        --colorMap RdYlBu_r \
+	--yMax 30 \
+	--zMin 0 --zMax 40 \
+        --plotTitle "${varieties} input R-loop Signal" \
+        --regionsLabel "all gene" "sense" "antisense" \
+        --dpi 300
+done
+echo "结束时间：$(date)"
+chmod u+x heatmap_allregions.sh
+nohup ./heatmap_allregions.sh > heatmap_allregions.log 2>&1 &
+tail -f heatmap_allregions.log
+
+生成基因间区域bed文件
+samtools faidx Gmax_508_v4.0.fa
+cut -f1 "/data/mshe/rloopData/Gmax_508_v4.0.fa.fai" > "/data/mshe/rloopData/chromosome_order.txt"
+# 首先合并所有基因区域（包括sense和antisense）
+cat "/data/mshe/rloopData/annotation/genes_plus.bed" "/data/mshe/rloopData/annotation/genes_minus.bed" | sort -k1,1 -k2,2n | bedtools sort -g "/data/mshe/rloopData/chromosome_order.txt" > "/data/mshe/rloopData/annotation/all_genes_combined_sorted.bed"
+# 用bedtools complement获取基因间区域，需要基因组fai文件来定义染色体边界，需要排序的bed文件
+bedtools complement -i "/data/mshe/rloopData/annotation/all_genes_combined_sorted.bed" -g "/data/mshe/rloopData/Gmax_508_v4.0.fa.fai" > "/data/mshe/rloopData/annotation/intergenic_regions.bed"
+echo "sense基因数量: $(wc -l < "/data/mshe/rloopData/annotation/genes_plus.bed")"
+echo "antisense基因数量: $(wc -l < "/data/mshe/rloopData/annotation/genes_minus.bed")" 
+echo "intergenic区域数量: $(wc -l < "/data/mshe/rloopData/annotation/intergenic_regions.bed")"
+
+vim heatmap_intergenic.sh
+#!/bin/bash
+FULL_BW_DIR="/data/mshe/rloopData/merged_bam_full/bigwigs"
+WCRLOOP_BW_DIR="/data/mshe/rloopData/merge_rep_bam_wcRloop/bigwigs"
+BED_DIR="/data/mshe/rloopData/annotation"
+OUTPUT_DIR="/data/mshe/rloopData/deeptools/intergenic_analysis"
+mkdir -p ${OUTPUT_DIR}
+echo "开始时间：$(date)"
+for varieties in "HC22" "HH43" "HX3" "Wm82" "ZH13" ; do
+echo "生成${varieties} IP的矩阵"
+    computeMatrix scale-regions \
+        -S "${FULL_BW_DIR}/${varieties}_IP_full.bw" "${WCRLOOP_BW_DIR}/${varieties}_IP_wRloop.merged.bam.bw" "${WCRLOOP_BW_DIR}/${varieties}_IP_cRloop.merged.bam.bw" \
+        -R "${BED_DIR}/intergenic_regions.bed" "${BED_DIR}/genes_plus.bed" "${BED_DIR}/genes_minus.bed" \
+        -a 2000 -b 2000 \
+        --regionBodyLength 5000 \
+        --binSize 50 \
+        --missingDataAsZero \
+        -o ${OUTPUT_DIR}/${varieties}_IP_intergenic_regions_matrix.gz \
+        --samplesLabel "Rloop" "wRloop" "cRloop" \
+	-p 10
+
+echo "生成${varieties} IP的热图"
+    plotHeatmap \
+        -m ${OUTPUT_DIR}/${varieties}_IP_intergenic_regions_matrix.gz \
+        -o ${OUTPUT_DIR}/${varieties}_IP_intergenic_heatmap.pdf \
+        --colorMap RdYlBu \
+	--yMax 60 \
+	--zMin 0 --zMax 80 \
+        --plotTitle "${varieties} IP R-loop Signal" \
+        --regionsLabel "intergenic" "sense" "antisense" \
+        --dpi 300
+
+echo "生成${varieties} input的矩阵"
+    computeMatrix scale-regions \
+        -S "${FULL_BW_DIR}/${varieties}_input_full.bw" "${WCRLOOP_BW_DIR}/${varieties}_input_wRloop.merged.bam.bw" "${WCRLOOP_BW_DIR}/${varieties}_input_cRloop.merged.bam.bw" \
+        -R "${BED_DIR}/intergenic_regions.bed" "${BED_DIR}/genes_plus.bed" "${BED_DIR}/genes_minus.bed" \
+        -a 2000 -b 2000 \
+        --regionBodyLength 5000 \
+        --binSize 50 \
+        --missingDataAsZero \
+        -o ${OUTPUT_DIR}/${varieties}_input_intergenic_regions_matrix.gz \
+        --samplesLabel "Rloop" "wRloop" "cRloop" \
+	-p 10
+
+echo "生成${varieties} input的热图"
+    plotHeatmap \
+        -m ${OUTPUT_DIR}/${varieties}_input_intergenic_regions_matrix.gz \
+        -o ${OUTPUT_DIR}/${varieties}_input_intergenic_heatmap.pdf \
+        --colorMap RdYlBu \
+	--yMax 30 \
+	--zMin 0 --zMax 40 \
+        --plotTitle "${varieties} input R-loop Signal" \
+        --regionsLabel "intergenic" "sense" "antisense" \
+        --dpi 300
+done
+echo "结束时间：$(date)"
+chmod u+x heatmap_intergenic.sh
+nohup ./heatmap_intergenic.sh > heatmap_intergenic.log 2>&1 &
+tail -f heatmap_intergenic.log
