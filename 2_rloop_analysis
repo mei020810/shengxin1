@@ -803,105 +803,55 @@ echo "输出目录: $OUTPUT_DIR"
 chmod u+x sense_anti_bam.sh
 nohup ./sense_anti_bam.log 2>&1 &
 
-vim merge_sense_anti_bam.sh
+vim merge_rep_sense_anti_bam.sh
 #!/bin/bash
-
-# 设置目录
-BAM_DIR="/data/mshe/rloopData/sense_anti_bam"
-MERGED_DIR="/data/mshe/rloopData/merged_strand_specific"
-mkdir -p "$MERGED_DIR"
+INPUT_DIR="/data/mshe/rloopData/sense_anti_bam"
+OUTPUT_DIR="/data/mshe/rloopData/merge_sense_anti_bam"
+mkdir -p "$OUTPUT_DIR"
 
 # 品种列表
 varieties=("HC22" "HH43" "HX3" "Wm82" "ZH13")
-
-# 合并函数
-merge_samples() {
-    local variety=$1
-    local type=$2  # IP or input
-    local strand=$3  # sense or antisense
-    
-    echo "合并 $variety $type $strand..."
-    
-    # 收集所有相关的BAM文件
-    wRloop_files=(${BAM_DIR}/${variety}-*-${type}_x800_wRloop_${strand}.bam)
-    cRloop_files=(${BAM_DIR}/${variety}-*-${type}_x800_cRloop_${strand}.bam)
-    
-    # 检查文件是否存在
-    all_files=()
-    for file in "${wRloop_files[@]}" "${cRloop_files[@]}"; do
-        if [ -f "$file" ]; then
-            all_files+=("$file")
-        fi
-    done
-    
-    if [ ${#all_files[@]} -eq 0 ]; then
-        echo "  警告: 没有找到 $variety $type $strand 的BAM文件"
-        return
-    fi
-    
-    # 合并BAM文件
-    output_bam="${MERGED_DIR}/${variety}_${type}_${strand}.bam"
-    samtools merge -f "$output_bam" "${all_files[@]}"
-    
-    # 创建索引
-    samtools index "$output_bam"
-    
-    # 统计reads数量
-    read_count=$(samtools view -c "$output_bam")
-    echo "  合并后reads数量: $read_count"
-}
-
-# 主循环
+echo "=== 合并重复样本 ==="
 for variety in "${varieties[@]}"; do
-    echo "=== 处理品种: $variety ==="
-    
-    # 合并IP样本
-    merge_samples "$variety" "IP" "sense"
-    merge_samples "$variety" "IP" "antisense"
-    
-    # 合并input样本
-    merge_samples "$variety" "input" "sense"
-    merge_samples "$variety" "input" "antisense"
-done
-
-# 生成合并后的bw文件
-echo "=== 生成合并后的BigWig文件 ==="
-for bam_file in ${MERGED_DIR}/*.bam; do
-    if [ ! -f "$bam_file" ]; then
-        continue
-    fi
-    
-    sample=$(basename "$bam_file" .bam)
-    echo "生成 $sample.bw"
-    
-    bamCoverage -b "$bam_file" \
-        -o "${MERGED_DIR}/${sample}.bw" \
-        --binSize 10 \
-        --normalizeUsing RPKM \
-        --numberOfProcessors 4
-done
-
-# 最终统计
-echo "=== 最终统计 ==="
-for variety in "${varieties[@]}"; do
-    echo "$variety:"
+    echo "处理品种: $variety"
     for type in "IP" "input"; do
-        for strand in "sense" "antisense"; do
-            bam_file="${MERGED_DIR}/${variety}_${type}_${strand}.bam"
-            if [ -f "$bam_file" ]; then
-                count=$(samtools view -c "$bam_file")
-                echo "  $type $strand: $count reads"
-            fi
+        for sample_type in "wRloop" "cRloop"; do
+            for strand in "sense" "antisense"; do
+                # 构建文件模式
+                file_pattern="${INPUT_DIR}/${variety}-*-${type}_x800_${sample_type}_${strand}.bam"
+                files=($file_pattern)
+                # 检查是否有匹配的文件
+                if [ ${#files[@]} -eq 0 ] || [ ! -f "${files[0]}" ]; then
+                    echo "  跳过: $variety $type $sample_type $strand (无文件)"
+                    continue
+                fi
+                echo "  合并: $variety $type $sample_type $strand"
+                # 合并BAM文件
+                output_bam="${OUTPUT_DIR}/${variety}_${type}_${sample_type}_${strand}.merged.bam"
+                samtools merge -f "$output_bam" "${files[@]}"
+                # 创建索引
+                samtools index "$output_bam"
+                # 统计reads数量
+                read_count=$(samtools view -c "$output_bam")
+                echo "    合并后reads数量: $read_count"
+                # 生成bw文件
+                echo "    生成BW文件"
+                bamCoverage -b "$output_bam" \
+                    -o "${OUTPUT_DIR}/${variety}_${type}_${sample_type}_${strand}.bw" \
+                    --binSize 10 \
+                    --normalizeUsing RPKM \
+                    --numberOfProcessors 4
+            done
         done
     done
 done
 
-echo "合并完成！输出目录: $MERGED_DIR"
+echo "合并完成！输出目录: $OUTPUT_DIR"
 echo "生成的文件:"
-ls -lh ${MERGED_DIR}/*.bam
-ls -lh ${MERGED_DIR}/*.bw 2>/dev/null || echo "BigWig文件生成中..."
-chmod u+x merge_sense_anti_bam.sh
-nohup ./merge_sense_anti_bam.sh > merge_sense_anti_bam.log 2>&1 &
+ls -lh ${OUTPUT_DIR}/*.bam
+ls -lh ${OUTPUT_DIR}/*.bw
+chmod u+x merge_rep_sense_anti_bam.sh
+nohup ./merge_rep_sense_anti_bam.sh > merge_rep_sense_anti_bam.log 2>&1 &
 
 #合并重复样本的bam
 vim merge_rep_bam.sh
@@ -1133,7 +1083,7 @@ for bam_file in ${MERGED_DIR}/*merged.bam; do
     
     echo "处理样本：$sample"
     macs3 callpeak -t "$bam_file" \
-    --extsize 200 -q 0.05 \
+    --extsize 200 -q 0.01 \
     --nomodel --SPMR -f BAM \
     -g 1e+9 -B \
     -n "${PEAKS_DIR}/${sample}_x800_bw2_full_nomodel.macs3"
