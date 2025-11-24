@@ -1,38 +1,23 @@
 vim macs3_peakcall_sense_anti.sh
 #!/bin/bash
 echo "开始时间：$(date)"
-BAM_DIR=/data/mshe/rloopData/merged_strand_specific
-OUTPUT_DIR=/data/mshe/rloopData/macs3_results_sense_anti
-mkdir -p ${OUTPUT_DIR}
-echo "senseRloop peak calling..."
-for bam_file in ${BAM_DIR}/*_sense.bam; do
-	sample=$(basename "$bam_file" _sense.bam)
-	# 检查是否已经运行过
-	if [ -f "${OUTPUT_DIR}/${sample}_x800_bw2_sense_nomodel.macs3_peaks.xls" ]; then
-        	echo "跳过已处理的样本：$sample"
-        	continue
-	fi
+BAM_DIR="/data/mshe/rloopData/final_sense_anti_bam"
+PEAK_DIR ="/data/mshe/rloopData/final_sense_anti_bam/peakcall"
+for bam_file in ${BAM_DIR}/*.bam; do
+    sample=$(basename "$bam_file" _final.bam)  
+    
+    # 检查是否已经运行过
+    if [ -f "${PEAKS_DIR}/${sample}_x800_bw2_full_nomodel.macs3_peaks.xls" ]; then  
+        echo "跳过已处理的样本：$sample"
+        continue
+    fi
+    
     echo "处理样本：$sample"
     macs3 callpeak -t "$bam_file" \
-    --extsize 200 -q 0.05 \
+    --extsize 200 -q 0.01 \
     --nomodel --SPMR -f BAM \
     -g 1e+9 -B \
-    -n "${OUTPUT_DIR}/${sample}_x800_bw2_sense_nomodel.macs3"
-done
-echo "antisenseRloop peak calling..."
-for bam_file in ${BAM_DIR}/*_antisense.bam; do
-	sample=$(basename "$bam_file" _antisense.bam)
-	# 检查是否已经运行过
-	if [ -f "${OUTPUT_DIR}/${sample}_x800_bw2_antisense_nomodel.macs3_peaks.xls" ]; then
-        	echo "跳过已处理的样本：$sample"
-        	continue
-	fi
-    echo "处理样本：$sample"
-    macs3 callpeak -t "$bam_file" \
-    --extsize 200 -q 0.05 \
-    --nomodel --SPMR -f BAM \
-    -g 1e+9 -B \
-    -n "${OUTPUT_DIR}/${sample}_x800_bw2_antisense_nomodel.macs3"
+    -n "${PEAKS_DIR}/${sample}_x800_bw2_full_nomodel.macs3"
 done
 echo "结束时间：$(date)"
 chmod u+x macs3_peakcall_sense_anti.sh
