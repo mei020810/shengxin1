@@ -853,6 +853,46 @@ ls -lh ${OUTPUT_DIR}/*.bw
 chmod u+x merge_rep_sense_anti_bam.sh
 nohup ./merge_rep_sense_anti_bam.sh > merge_rep_sense_anti_bam.log 2>&1 &
 
+vim final_sense_anti_bam.sh
+#!/bin/bash
+INPUT_DIR="/data/mshe/rloopData/merge_sense_anti_bam"
+OUTPUT_DIR="/data/mshe/rloopData/final_sense_anti_bam"
+mkdir -p "$OUTPUT_DIR"
+# 品种列表
+varieties=("HC22" "HH43" "HX3" "Wm82" "ZH13")
+
+echo "=== 合并wRloop和cRloop的sense/antisense数据 ==="
+for variety in "${varieties[@]}"; do
+    echo "处理品种: $variety"
+    for type in "IP" "input"; do
+        # 合并sense数据 (wRloop_sense + cRloop_sense)
+        wRloop_sense="${INPUT_DIR}/${variety}_${type}_wRloop_sense.merged.bam"
+        cRloop_sense="${INPUT_DIR}/${variety}_${type}_cRloop_sense.merged.bam"
+        
+        if [ -f "$wRloop_sense" ] && [ -f "$cRloop_sense" ]; then
+            echo "  合并sense: $variety $type"
+            samtools merge -f \
+                "${OUTPUT_DIR}/${variety}_${type}_sense_final.bam" \
+                "$wRloop_sense" "$cRloop_sense"
+            samtools index "${OUTPUT_DIR}/${variety}_${type}_sense_final.bam"
+        fi
+        
+        # 合并antisense数据 (wRloop_antisense + cRloop_antisense)
+        wRloop_anti="${INPUT_DIR}/${variety}_${type}_wRloop_antisense.merged.bam"
+        cRloop_anti="${INPUT_DIR}/${variety}_${type}_cRloop_antisense.merged.bam"
+        
+        if [ -f "$wRloop_anti" ] && [ -f "$cRloop_anti" ]; then
+            echo "  合并antisense: $variety $type"
+            samtools merge -f \
+                "${OUTPUT_DIR}/${variety}_${type}_antisense_final.bam" \
+                "$wRloop_anti" "$cRloop_anti"
+            samtools index "${OUTPUT_DIR}/${variety}_${type}_antisense_final.bam"
+        fi
+    done
+done
+chmod u+x final_sense_anti_bam.sh
+nohup ./final_sense_anti_bam.sh > final_sense_anti_bam.log 2>&1 &
+
 #合并重复样本的bam
 vim merge_rep_bam.sh
 #!/bin/bash
