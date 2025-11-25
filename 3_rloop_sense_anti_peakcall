@@ -2,7 +2,8 @@ vim macs3_peakcall_sense_anti.sh
 #!/bin/bash
 echo "开始时间：$(date)"
 BAM_DIR="/data/mshe/rloopData/final_sense_anti_bam"
-PEAK_DIR ="/data/mshe/rloopData/final_sense_anti_bam/peakcall"
+PEAKS_DIR="/data/mshe/rloopData/final_sense_anti_bam/peakcall"
+mkdir -p "${PEAKS_DIR}"
 for bam_file in ${BAM_DIR}/*.bam; do
     sample=$(basename "$bam_file" _final.bam)  
     
@@ -22,6 +23,7 @@ done
 echo "结束时间：$(date)"
 chmod u+x macs3_peakcall_sense_anti.sh
 nohup ./macs3_peakcall_sense_anti.sh > macs3_peakcall_sense_anti.log 2>&1 &
+
 
 vim heatmap_allregions.sh
 #!/bin/bash
