@@ -1,5 +1,6 @@
 vim macs3_peakcall_sense_anti.sh
 #!/bin/bash
+set -euo pipefail
 echo "开始时间：$(date)"
 BAM_DIR="/data/mshe/rloopData/final_sense_anti_bam"
 PEAKS_DIR="/data/mshe/rloopData/final_sense_anti_bam/peakcall"
@@ -23,49 +24,47 @@ done
 echo "结束时间：$(date)"
 chmod u+x macs3_peakcall_sense_anti.sh
 nohup ./macs3_peakcall_sense_anti.sh > macs3_peakcall_sense_anti.log 2>&1 &
-#以上脚本未能运行，直接区分wRloop和cRloop的narrowpeak
+#以上脚本得到的bed仅描述峰的位置，并不直接提供基因方向
 vim sense_anti_classify_final.sh
 #!/bin/bash
-WCRLOOP_DIR="/data/mshe/rloopData/macs3_results_merge_wcRloop"
+set -euo pipefail
+WCRLOOP_DIR="/data/mshe/rloopData/merge_rep_bam_wcRloop"
 ANNOTATION_DIR="/data/mshe/rloopData/annotation"
-OUTPUT_DIR="/data/mshe/rloopData/final_sense_anti_bam/peak"
+OUTPUT_DIR="/data/mshe/rloopData/final_sense_anti_bam/sense_anti_bed"
 mkdir -p "$OUTPUT_DIR"
 
-# 为每个品种分类sense和anti peaks
-for wrloop_peaks in ${WCRLOOP_DIR}/*_wRloop_nomodel.macs3_peaks.narrowPeak; do
-    sample=$(basename "$wrloop_peaks" _x800_bw2_wRloop_nomodel.macs3_peaks.narrowPeak)
-    if [ ! -f "$wrloop_peaks" ]; then
-        echo "警告: wRloop peaks文件不存在 - $wrloop_peaks"
-        continue
-    fi
+for wrloop_bam in ${WCRLOOP_DIR}/*_wRloop.merged.bam; do
+    sample=$(basename "$wrloop_bam" _wRloop.merged.bam)
   echo "处理wRloop样本: $sample"
   echo "识别Sense R-loops..."
     # wRloop + 正链基因 → sense
-    bedtools intersect -a "$wrloop_peaks" -b "${ANNOTATION_DIR}/genes_plus.bed" -wa -u > \
+    bedtools intersect -a "$wrloop_bam" -b "${ANNOTATION_DIR}/genes_plus1.bed" -wa > \
         "${OUTPUT_DIR}/${sample}_wRloop_sense.bed"
     # wRloop + 负链基因 → anti-sense
-    bedtools intersect -a "$wrloop_peaks" -b "${ANNOTATION_DIR}/genes_minus.bed" -wa -u > \
+    bedtools intersect -a "$wrloop_bam" -b "${ANNOTATION_DIR}/genes_minus1.bed" -wa > \
         "${OUTPUT_DIR}/${sample}_wRloop_antisense.bed"
+	bedtools intersect -a "$wrloop_bam" -b "${ANNOTATION_DIR}/genes_fixed.bed" -v > \
+    	"${OUTPUT_DIR}/${sample}_wRloop_intergenic.bed"
     echo "  Sense: $(wc -l < ${OUTPUT_DIR}/${sample}_wRloop_sense.bed)"
     echo "  Anti-sense: $(wc -l < ${OUTPUT_DIR}/${sample}_wRloop_antisense.bed)"
+	echo "  Intergenic: $(wc -l < ${OUTPUT_DIR}/${sample}_wRloop_intergenic.bed)"
 done
 
-for crloop_peaks in ${WCRLOOP_DIR}/*_cRloop_nomodel.macs3_peaks.narrowPeak; do
-    sample=$(basename "$crloop_peaks" _x800_bw2_cRloop_nomodel.macs3_peaks.narrowPeak)
-    if [ ! -f "$crloop_peaks" ]; then
-        echo "警告: cRloop peaks文件不存在 - $crloop_peaks"
-        continue
-    fi
+for crloop_bam in ${WCRLOOP_DIR}/*_cRloop.merged.bam; do
+    sample=$(basename "$crloop_bam" _cRloop.merged.bam)
   echo "处理cRloop样本: $sample"
   echo "识别Sense R-loops..."
     # cRloop + 负链基因 → sense
-    bedtools intersect -a "$crloop_peaks" -b "${ANNOTATION_DIR}/genes_minus.bed" -wa -u > \
+    bedtools intersect -a "$crloop_bam" -b "${ANNOTATION_DIR}/genes_minus1.bed" -wa > \
         "${OUTPUT_DIR}/${sample}_cRloop_sense.bed"
     # cRloop + 正链基因 → anti-sense
-    bedtools intersect -a "$crloop_peaks" -b "${ANNOTATION_DIR}/genes_plus.bed" -wa -u > \
+    bedtools intersect -a "$crloop_bam" -b "${ANNOTATION_DIR}/genes_plus1.bed" -wa > \
         "${OUTPUT_DIR}/${sample}_cRloop_antisense.bed"
+	bedtools intersect -a "$crloop_bam" -b "${ANNOTATION_DIR}/genes_fixed.bed" -v > \
+    	"${OUTPUT_DIR}/${sample}_cRloop_intergenic.bed"
     echo "  Sense: $(wc -l < ${OUTPUT_DIR}/${sample}_cRloop_sense.bed)"
     echo "  Anti-sense: $(wc -l < ${OUTPUT_DIR}/${sample}_cRloop_antisense.bed)"
+	echo "  Intergenic: $(wc -l < ${OUTPUT_DIR}/${sample}_cRloop_intergenic.bed)"
 done
 
 # 然后按品种合并
@@ -75,82 +74,52 @@ for variety in HC22 HH43 HX3 Wm82 ZH13; do
     # 合并sense peaks
     cat "${OUTPUT_DIR}/${variety}_IP_wRloop_sense.bed" \
         "${OUTPUT_DIR}/${variety}_IP_cRloop_sense.bed" 2>/dev/null | \
-        sort -k1,1 -k2,2n | bedtools merge -i - > \
+        sort -k1,1 -k2,2n | uniq > \
         "${OUTPUT_DIR}/${variety}_IP_sense.bed"
     
     cat "${OUTPUT_DIR}/${variety}_input_wRloop_sense.bed" \
         "${OUTPUT_DIR}/${variety}_input_cRloop_sense.bed" 2>/dev/null | \
-        sort -k1,1 -k2,2n | bedtools merge -i - > \
+        sort -k1,1 -k2,2n | uniq > \
         "${OUTPUT_DIR}/${variety}_input_sense.bed"
     # 合并anti-sense peaks
     cat "${OUTPUT_DIR}/${variety}_IP_wRloop_antisense.bed" \
         "${OUTPUT_DIR}/${variety}_IP_cRloop_antisense.bed" 2>/dev/null | \
-        sort -k1,1 -k2,2n | bedtools merge -i - > \
+        sort -k1,1 -k2,2n | uniq > \
         "${OUTPUT_DIR}/${variety}_IP_antisense.bed"
     
     cat "${OUTPUT_DIR}/${variety}_input_wRloop_antisense.bed" \
         "${OUTPUT_DIR}/${variety}_input_cRloop_antisense.bed" 2>/dev/null | \
-        sort -k1,1 -k2,2n | bedtools merge -i - > \
+        sort -k1,1 -k2,2n | uniq > \
         "${OUTPUT_DIR}/${variety}_input_antisense.bed"
+	# 合并intergenic peaks
+    cat "${OUTPUT_DIR}/${variety}_IP_wRloop_intergenic.bed" \
+        "${OUTPUT_DIR}/${variety}_IP_cRloop_intergenic.bed" 2>/dev/null | \
+        sort -k1,1 -k2,2n | uniq > \
+        "${OUTPUT_DIR}/${variety}_IP_intergenic.bed"
+    
+    cat "${OUTPUT_DIR}/${variety}_input_wRloop_intergenic.bed" \
+        "${OUTPUT_DIR}/${variety}_input_cRloop_intergenic.bed" 2>/dev/null | \
+        sort -k1,1 -k2,2n | uniq > \
+        "${OUTPUT_DIR}/${variety}_input_intergenic.bed"
 
     sense_IP_count=$(wc -l < "${OUTPUT_DIR}/${variety}_IP_sense.bed")
     antisense_IP_count=$(wc -l < "${OUTPUT_DIR}/${variety}_IP_antisense.bed")
+    intergenic_IP_count=$(wc -l < "${OUTPUT_DIR}/${variety}_IP_intergenic.bed")
     sense_input_count=$(wc -l < "${OUTPUT_DIR}/${variety}_input_sense.bed")
     antisense_input_count=$(wc -l < "${OUTPUT_DIR}/${variety}_input_antisense.bed")
+    intergenic_input_count=$(wc -l < "${OUTPUT_DIR}/${variety}_input_intergenic.bed")
+    echo "  Sense IP bed: $sense_IP_count"
+    echo "  Anti-sense IP bed: $antisense_IP_count"
+    echo "  intergenic IP bed: $intergenic_IP_count"
+    echo "  Sense input bed: $sense_input_count"
+    echo "  Anti-sense input bed: $antisense_input_count"
+    echo "  intergenic input bed: $intergenic_input_count"
 
-    
-    echo "  Sense IP peaks: $sense_IP_count"
-    echo "  Anti-sense IP peaks: $antisense_IP_count"
-    echo "  Sense input peaks: $sense_input_count"
-    echo "  Anti-sense input peaks: $antisense_input_count"
 done
 chmod u+x sense_anti_classify_final.sh
 nohup ./sense_anti_classify_final.sh > sense_anti_classify_final.log 2>&1 &
 
-vim create_gene_bed.sh
-#!/bin/bash
-WCRLOOP_DIR="/data/mshe/rloopData/macs3_results_merge_wcRloop"
-ANNOTATION_DIR="/data/mshe/rloopData/annotation"
-OUTPUT_DIR="/data/mshe/rloopData/final_gene_regions"
-mkdir -p "$OUTPUT_DIR"
-echo "=== 生成有R-loop peak的sense/antisense基因区域BED==="
-for variety in HC22 HH43 HX3 Wm82 ZH13; do
-    for type in IP input; do
-    echo "处理品种: ${variety} ${type}"
-WRLOOP_PEAKS="${WCRLOOP_DIR}/${variety}_${type}_x800_bw2_wRloop_nomodel.macs3_peaks.narrowPeak" CRLOOP_PEAKS="${WCRLOOP_DIR}/${variety}_${type}_x800_bw2_cRloop_nomodel.macs3_peaks.narrowPeak"
-    GENES_PLUS="${ANNOTATION_DIR}/genes_plus.bed"    
-    GENES_MINUS="${ANNOTATION_DIR}/genes_minus.bed" 
-    # Sense基因：有wRloop peak的正链基因 + 有cRloop peak的负链基因
-    # 使用 -wa 保留基因注释的所有列
-    bedtools intersect -a "$GENES_PLUS" -b "$WRLOOP_PEAKS" -wa -u > \
-        "${OUTPUT_DIR}/${variety}_${type}_wRloop_sense_genes.bed"
-    bedtools intersect -a "$GENES_MINUS" -b "$CRLOOP_PEAKS" -wa -u > \
-        "${OUTPUT_DIR}/${variety}_${type}_cRloop_sense_genes.bed"
 
-    cat "${OUTPUT_DIR}/${variety}_${type}_wRloop_sense_genes.bed" \
-        "${OUTPUT_DIR}/${variety}_${type}_cRloop_sense_genes.bed" | \
-        sort -k1,1 -k2,2n > \
-        "${OUTPUT_DIR}/${variety}_${type}_sense_genes.bed"    
-    # Antisense基因：有wRloop peak的负链基因 + 有cRloop peak的正链基因  
-    bedtools intersect -a "$GENES_MINUS" -b "$WRLOOP_PEAKS" -wa -u > \
-        "${OUTPUT_DIR}/${variety}_${type}_wRloop_antisense_genes.bed"
-    bedtools intersect -a "$GENES_PLUS" -b "$CRLOOP_PEAKS" -wa -u > \
-        "${OUTPUT_DIR}/${variety}_${type}_cRloop_antisense_genes.bed"
-    
-    cat "${OUTPUT_DIR}/${variety}_${type}_wRloop_antisense_genes.bed" \
-        "${OUTPUT_DIR}/${variety}_${type}_cRloop_antisense_genes.bed" | \
-        sort -k1,1 -k2,2n > \
-        "${OUTPUT_DIR}/${variety}_${type}_antisense_genes.bed"
-    echo "  验证BED文件列数和strand信息:"
-    echo "  Sense genes列数: $(awk '{print NF}' "${OUTPUT_DIR}/${variety}_${type}_sense_genes.bed" | sort -nu)"
-    echo "  Sense genes strand分布:"
-    awk '{print $6}' "${OUTPUT_DIR}/${variety}_${type}_sense_genes.bed" | sort | uniq -c || echo "无strand列"
-    echo "  Antisense genes列数: $(awk '{print NF}' "${OUTPUT_DIR}/${variety}_${type}_antisense_genes.bed" | sort -nu)" 
-    awk '{print $6}' "${OUTPUT_DIR}/${variety}_${type}_antisense_genes.bed" | sort | uniq -c || echo "无strand列"
-done
-done
-chmod u+x create_gene_bed.sh
-./create_gene_bed.sh
 
 vim merge_intergenic_bed.sh
 #!/bin/bash
@@ -357,8 +326,7 @@ vim heatmap_intergenic.sh
 #!/bin/bash
 FULL_BW_DIR="/data/mshe/rloopData/merged_bam_full/bigwigs"
 WCRLOOP_BW_DIR="/data/mshe/rloopData/merge_rep_bam_wcRloop/bigwigs"
-INTERGENIC_BED_DIR="/data/mshe/rloopData/annotation"
-BED_DIR="/data/mshe/rloopData/final_gene_regions"
+BED_DIR="/data/mshe/rloopData/final_sense_anti_bam/sense_anti_bed"
 OUTPUT_DIR="/data/mshe/rloopData/deeptools/intergenic_analysis"
 mkdir -p ${OUTPUT_DIR}
 echo "开始时间：$(date)"
@@ -366,7 +334,7 @@ for varieties in "HC22" "HH43" "HX3" "Wm82" "ZH13" ; do
 echo "生成${varieties} IP的矩阵"
     computeMatrix scale-regions \
         -S "${FULL_BW_DIR}/${varieties}_IP_full.bw" "${WCRLOOP_BW_DIR}/${varieties}_IP_wRloop.merged.bam.bw" "${WCRLOOP_BW_DIR}/${varieties}_IP_cRloop.merged.bam.bw" \
-        -R "${INTERGENIC_BED_DIR}/intergenic_regions.bed" "${BED_DIR}/${varieties}_IP_sense_genes.bed" "${BED_DIR}/${varieties}_IP_antisense_genes.bed" \
+        -R "${BED_DIR}/intergenic.bed" "${BED_DIR}/${varieties}_IP_sense_genes.bed" "${BED_DIR}/${varieties}_IP_antisense_genes.bed" \
         -a 2000 -b 2000 \
         --regionBodyLength 5000 \
         --binSize 50 \
@@ -389,7 +357,7 @@ echo "生成${varieties} IP的热图"
 echo "生成${varieties} input的矩阵"
     computeMatrix scale-regions \
         -S "${FULL_BW_DIR}/${varieties}_input_full.bw" "${WCRLOOP_BW_DIR}/${varieties}_input_wRloop.merged.bam.bw" "${WCRLOOP_BW_DIR}/${varieties}_input_cRloop.merged.bam.bw" \
-        -R "${INTERGENIC_BED_DIR}/intergenic_regions.bed" "${BED_DIR}/${varieties}_input_sense_genes.bed" "${BED_DIR}/${varieties}_input_antisense_genes.bed" \
+        -R "${BED_DIR}/intergenic_regions.bed" "${BED_DIR}/${varieties}_input_sense_genes.bed" "${BED_DIR}/${varieties}_input_antisense_genes.bed" \
         -a 2000 -b 2000 \
         --regionBodyLength 5000 \
         --binSize 50 \
@@ -412,3 +380,49 @@ done
 echo "结束时间：$(date)"
 chmod u+x heatmap_intergenic.sh
 nohup ./heatmap_intergenic.sh > heatmap_intergenic.log 2>&1 &
+
+vim pieplot_create.sh
+#!/bin/bash
+set -euo pipefail
+
+Rscript -e '
+library(ChIPseeker)
+library(GenomicFeatures)
+peak_dir <- "/data/mshe/rloopData/macs3_results_merge_wcRloop"
+out_dir  <- "/data/mshe/rloopData/pieplot_wcRloop"
+if (!dir.exists(out_dir)) {
+  dir.create(out_dir, recursive = TRUE)
+  message("Created output directory: ", out_dir)
+} else {
+  message("Output directory already exists: ", out_dir)
+}
+#建立注释包
+txdb <- makeTxDbFromGFF("/data/mshe/rloopData/Gmax_508_Wm82.a4.v1.gene.gff3")
+
+peak_files <- list.files(
+  path = peak_dir,
+  pattern = "_[wc]Rloop_nomodel.macs3_peaks.narrowPeak$",
+  full.names = TRUE
+)
+
+message("Found peak files:")
+print(peak_files)
+
+for (peak_path in peak_files) {
+  sample_name <- gsub(".macs3_peaks.narrowPeak", "", basename(peak_path))
+  message("Processing: ", sample_name)
+  peak <- readPeakFile(peak_path)
+  peakAnno <- annotatePeak(
+    peak,
+    TxDb = txdb,
+    tssRegion = c(-2000, 2000)
+  )
+  pdf(file.path(out_dir, paste0(sample_name, "_peakAnno_pie.pdf")),
+      width = 6, height = 6)
+  plotAnnoPie(peakAnno)
+  dev.off()
+}
+message("All pie plots saved to: ", out_dir)
+'
+chmod u+x pieplot_create.sh
+./pieplot_create.sh
