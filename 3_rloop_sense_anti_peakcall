@@ -35,36 +35,54 @@ mkdir -p "$OUTPUT_DIR"
 
 for wrloop_bam in ${WCRLOOP_DIR}/*_wRloop.merged.bam; do
     sample=$(basename "$wrloop_bam" _wRloop.merged.bam)
-  echo "处理wRloop样本: $sample"
-  echo "识别Sense R-loops..."
+    echo "处理wRloop样本: $sample"
+    echo "识别Sense R-loops..."
+    
+    # 先将BAM转换为BED格式（也可以用管道传递，绕过中间文件生成bedtools bamtobed -i "merge_rep_bam_wcRloop/HC22_input_wRloop.merged.bam" | bedtools intersect -a stdin -b "annotation/genes_plus1.bed" -wa | head）
+    bedtools bamtobed -i "$wrloop_bam" > "${OUTPUT_DIR}/${sample}_wRloop_all.bed"
+    
     # wRloop + 正链基因 → sense
-    bedtools intersect -a "$wrloop_bam" -b "${ANNOTATION_DIR}/genes_plus1.bed" -wa > \
+    bedtools intersect -a "${OUTPUT_DIR}/${sample}_wRloop_all.bed" -b "${ANNOTATION_DIR}/genes_plus1.bed" -wa > \
         "${OUTPUT_DIR}/${sample}_wRloop_sense.bed"
     # wRloop + 负链基因 → anti-sense
-    bedtools intersect -a "$wrloop_bam" -b "${ANNOTATION_DIR}/genes_minus1.bed" -wa > \
+    bedtools intersect -a "${OUTPUT_DIR}/${sample}_wRloop_all.bed" -b "${ANNOTATION_DIR}/genes_minus1.bed" -wa > \
         "${OUTPUT_DIR}/${sample}_wRloop_antisense.bed"
-	bedtools intersect -a "$wrloop_bam" -b "${ANNOTATION_DIR}/genes_fixed.bed" -v > \
-    	"${OUTPUT_DIR}/${sample}_wRloop_intergenic.bed"
+    # wRloop intergenic
+    bedtools intersect -a "${OUTPUT_DIR}/${sample}_wRloop_all.bed" -b "${ANNOTATION_DIR}/genes_fixed.bed" -v > \
+        "${OUTPUT_DIR}/${sample}_wRloop_intergenic.bed"
+    
     echo "  Sense: $(wc -l < ${OUTPUT_DIR}/${sample}_wRloop_sense.bed)"
     echo "  Anti-sense: $(wc -l < ${OUTPUT_DIR}/${sample}_wRloop_antisense.bed)"
-	echo "  Intergenic: $(wc -l < ${OUTPUT_DIR}/${sample}_wRloop_intergenic.bed)"
+    echo "  Intergenic: $(wc -l < ${OUTPUT_DIR}/${sample}_wRloop_intergenic.bed)"
+    
+    # 清理临时文件
+    rm "${OUTPUT_DIR}/${sample}_wRloop_all.bed"
 done
 
 for crloop_bam in ${WCRLOOP_DIR}/*_cRloop.merged.bam; do
     sample=$(basename "$crloop_bam" _cRloop.merged.bam)
-  echo "处理cRloop样本: $sample"
-  echo "识别Sense R-loops..."
+    echo "处理cRloop样本: $sample"
+    echo "识别Sense R-loops..."
+    
+    # 先将BAM转换为BED格式
+    bedtools bamtobed -i "$crloop_bam" > "${OUTPUT_DIR}/${sample}_cRloop_all.bed"
+    
     # cRloop + 负链基因 → sense
-    bedtools intersect -a "$crloop_bam" -b "${ANNOTATION_DIR}/genes_minus1.bed" -wa > \
+    bedtools intersect -a "${OUTPUT_DIR}/${sample}_cRloop_all.bed" -b "${ANNOTATION_DIR}/genes_minus1.bed" -wa > \
         "${OUTPUT_DIR}/${sample}_cRloop_sense.bed"
     # cRloop + 正链基因 → anti-sense
-    bedtools intersect -a "$crloop_bam" -b "${ANNOTATION_DIR}/genes_plus1.bed" -wa > \
+    bedtools intersect -a "${OUTPUT_DIR}/${sample}_cRloop_all.bed" -b "${ANNOTATION_DIR}/genes_plus1.bed" -wa > \
         "${OUTPUT_DIR}/${sample}_cRloop_antisense.bed"
-	bedtools intersect -a "$crloop_bam" -b "${ANNOTATION_DIR}/genes_fixed.bed" -v > \
-    	"${OUTPUT_DIR}/${sample}_cRloop_intergenic.bed"
+    # cRloop intergenic
+    bedtools intersect -a "${OUTPUT_DIR}/${sample}_cRloop_all.bed" -b "${ANNOTATION_DIR}/genes_fixed.bed" -v > \
+        "${OUTPUT_DIR}/${sample}_cRloop_intergenic.bed"
+    
     echo "  Sense: $(wc -l < ${OUTPUT_DIR}/${sample}_cRloop_sense.bed)"
     echo "  Anti-sense: $(wc -l < ${OUTPUT_DIR}/${sample}_cRloop_antisense.bed)"
-	echo "  Intergenic: $(wc -l < ${OUTPUT_DIR}/${sample}_cRloop_intergenic.bed)"
+    echo "  Intergenic: $(wc -l < ${OUTPUT_DIR}/${sample}_cRloop_intergenic.bed)"
+    
+    # 清理临时文件
+    rm "${OUTPUT_DIR}/${sample}_cRloop_all.bed"
 done
 
 # 然后按品种合并
@@ -81,6 +99,7 @@ for variety in HC22 HH43 HX3 Wm82 ZH13; do
         "${OUTPUT_DIR}/${variety}_input_cRloop_sense.bed" 2>/dev/null | \
         sort -k1,1 -k2,2n | uniq > \
         "${OUTPUT_DIR}/${variety}_input_sense.bed"
+    
     # 合并anti-sense peaks
     cat "${OUTPUT_DIR}/${variety}_IP_wRloop_antisense.bed" \
         "${OUTPUT_DIR}/${variety}_IP_cRloop_antisense.bed" 2>/dev/null | \
@@ -91,7 +110,8 @@ for variety in HC22 HH43 HX3 Wm82 ZH13; do
         "${OUTPUT_DIR}/${variety}_input_cRloop_antisense.bed" 2>/dev/null | \
         sort -k1,1 -k2,2n | uniq > \
         "${OUTPUT_DIR}/${variety}_input_antisense.bed"
-	# 合并intergenic peaks
+    
+    # 合并intergenic peaks
     cat "${OUTPUT_DIR}/${variety}_IP_wRloop_intergenic.bed" \
         "${OUTPUT_DIR}/${variety}_IP_cRloop_intergenic.bed" 2>/dev/null | \
         sort -k1,1 -k2,2n | uniq > \
@@ -108,13 +128,13 @@ for variety in HC22 HH43 HX3 Wm82 ZH13; do
     sense_input_count=$(wc -l < "${OUTPUT_DIR}/${variety}_input_sense.bed")
     antisense_input_count=$(wc -l < "${OUTPUT_DIR}/${variety}_input_antisense.bed")
     intergenic_input_count=$(wc -l < "${OUTPUT_DIR}/${variety}_input_intergenic.bed")
+    
     echo "  Sense IP bed: $sense_IP_count"
     echo "  Anti-sense IP bed: $antisense_IP_count"
     echo "  intergenic IP bed: $intergenic_IP_count"
     echo "  Sense input bed: $sense_input_count"
     echo "  Anti-sense input bed: $antisense_input_count"
     echo "  intergenic input bed: $intergenic_input_count"
-
 done
 chmod u+x sense_anti_classify_final.sh
 nohup ./sense_anti_classify_final.sh > sense_anti_classify_final.log 2>&1 &
