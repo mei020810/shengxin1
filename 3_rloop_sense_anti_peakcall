@@ -342,27 +342,88 @@ chmod u+x heatmap_intergenic.sh
 nohup ./heatmap_intergenic.sh > heatmap_intergenic.log 2>&1 &
 tail -f heatmap_intergenic.log
 
-vim heatmap_intergenic.sh
+
+vim narrowpeak_classify_bed.sh
+#!/bin/bash
+set -euo pipefail
+WCRLOOP_DIR="/data/mshe/rloopData/macs3_results_merge_wcRloop"
+ANNOTATION_DIR="/data/mshe/rloopData/annotation"
+OUTPUT_DIR="/data/mshe/rloopData/narrowpeak_gene_regions"
+mkdir -p "$OUTPUT_DIR"
+echo "=== 生成有R-loop peak的sense/antisense/intergenic基因区域BED==="
+for variety in HC22 HH43 HX3 Wm82 ZH13; do
+for type in IP input; do
+    echo "处理品种: ${variety} ${type}"
+WRLOOP_PEAKS="${WCRLOOP_DIR}/${variety}_${type}_x800_bw2_wRloop_nomodel.macs3_peaks.narrowPeak"
+CRLOOP_PEAKS="${WCRLOOP_DIR}/${variety}_${type}_x800_bw2_cRloop_nomodel.macs3_peaks.narrowPeak"
+    GENES_PLUS="${ANNOTATION_DIR}/genes_plus1.bed"    
+    GENES_MINUS="${ANNOTATION_DIR}/genes_minus1.bed"
+    INTERGENIC_BED="${ANNOTATION_DIR}/intergenic_regions1.bed"
+    # Sense基因：有wRloop peak的正链基因 + 有cRloop peak的负链基因
+    # 使用 -wa 保留基因注释的所有列（包括strand）
+    bedtools intersect -a "$GENES_PLUS" -b "$WRLOOP_PEAKS" -wa -u > \
+        "${OUTPUT_DIR}/${variety}_${type}_sense_genes_w.bed"
+    bedtools intersect -a "$GENES_MINUS" -b "$CRLOOP_PEAKS" -wa -u > \
+        "${OUTPUT_DIR}/${variety}_${type}_sense_genes_c.bed"
+    cat "${OUTPUT_DIR}/${variety}_${type}_sense_genes_w.bed" \
+        "${OUTPUT_DIR}/${variety}_${type}_sense_genes_c.bed" | \
+        sort -k1,1 -k2,2n | uniq > \
+        "${OUTPUT_DIR}/${variety}_${type}_sense_genes.bed"
+    # Antisense基因：有wRloop peak的负链基因 + 有cRloop peak的正链基因  
+    bedtools intersect -a "$GENES_MINUS" -b "$WRLOOP_PEAKS" -wa -u > \
+        "${OUTPUT_DIR}/${variety}_${type}_antisense_genes_w.bed"
+    bedtools intersect -a "$GENES_PLUS" -b "$CRLOOP_PEAKS" -wa -u > \
+        "${OUTPUT_DIR}/${variety}_${type}_antisense_genes_c.bed"
+    cat "${OUTPUT_DIR}/${variety}_${type}_antisense_genes_w.bed" \
+        "${OUTPUT_DIR}/${variety}_${type}_antisense_genes_c.bed" | \
+        sort -k1,1 -k2,2n | uniq > \
+        "${OUTPUT_DIR}/${variety}_${type}_antisense_genes.bed"
+    # Intergenic区域：有wRloop peak的intergenic区域 + 有cRloop peak的intergenic区域
+    bedtools intersect -a "$INTERGENIC_BED" -b "$WRLOOP_PEAKS" -wa -u > \
+        "${OUTPUT_DIR}/${variety}_${type}_intergenic_regions_w.bed"
+    bedtools intersect -a "$INTERGENIC_BED" -b "$CRLOOP_PEAKS" -wa -u > \
+        "${OUTPUT_DIR}/${variety}_${type}_intergenic_regions_c.bed"
+    cat "${OUTPUT_DIR}/${variety}_${type}_intergenic_regions_w.bed" \
+        "${OUTPUT_DIR}/${variety}_${type}_intergenic_regions_c.bed" | \
+        sort -k1,1 -k2,2n | uniq > \
+        "${OUTPUT_DIR}/${variety}_${type}_intergenic_regions.bed"
+    sense_count=$(wc -l < "${OUTPUT_DIR}/${variety}_${type}_sense_genes.bed")
+    antisense_count=$(wc -l < "${OUTPUT_DIR}/${variety}_${type}_antisense_genes.bed")
+    intergenic_count=$(wc -l < "${OUTPUT_DIR}/${variety}_${type}_intergenic_regions.bed")
+    echo "    Sense基因: $sense_count"
+    echo "    Antisense基因: $antisense_count" 
+    echo "    Intergenic区域: $intergenic_count"
+    rm "${OUTPUT_DIR}/${variety}_${type}_sense_genes_w.bed" \
+       "${OUTPUT_DIR}/${variety}_${type}_sense_genes_c.bed" \
+       "${OUTPUT_DIR}/${variety}_${type}_antisense_genes_w.bed" \
+       "${OUTPUT_DIR}/${variety}_${type}_antisense_genes_c.bed" \
+       "${OUTPUT_DIR}/${variety}_${type}_intergenic_regions_w.bed" \
+       "${OUTPUT_DIR}/${variety}_${type}_intergenic_regions_c.bed"
+done
+done
+chmod u+x narrowpeak_classify_bed.sh
+nohup ./narrowpeak_classify_bed.sh > narrowpeak_classify_bed.log 2>&1 &
+
+vim heatmap_intergenic_narrowpeak.sh
 #!/bin/bash
 set -euo pipefail
 FULL_BW_DIR="/data/mshe/rloopData/merged_bam_full/bigwigs"
 WCRLOOP_BW_DIR="/data/mshe/rloopData/merge_rep_bam_wcRloop/bigwigs"
-BED_DIR="/data/mshe/rloopData/final_sense_anti_bam/sense_anti_bed"
-OUTPUT_DIR="/data/mshe/rloopData/deeptools/intergenic_analysis"
+BED_DIR="/data/mshe/rloopData/narrowpeak_gene_regions"
+OUTPUT_DIR="/data/mshe/rloopData/deeptools/intergenic_analysis_narrowpeak"
 mkdir -p ${OUTPUT_DIR}
 echo "开始时间：$(date)"
 for varieties in "HC22" "HH43" "HX3" "Wm82" "ZH13" ; do
 echo "生成${varieties} IP的矩阵"
     computeMatrix scale-regions \
         -S "${FULL_BW_DIR}/${varieties}_IP_full.bw" "${WCRLOOP_BW_DIR}/${varieties}_IP_wRloop.merged.bam.bw" "${WCRLOOP_BW_DIR}/${varieties}_IP_cRloop.merged.bam.bw" \
-        -R "${BED_DIR}/${varieties}_IP_intergenic.bed" "${BED_DIR}/${varieties}_IP_sense.bed" "${BED_DIR}/${varieties}_IP_antisense.bed" \
+        -R "${BED_DIR}/${varieties}_IP_intergenic_regions.bed" "${BED_DIR}/${varieties}_IP_sense_genes.bed" "${BED_DIR}/${varieties}_IP_antisense_genes.bed" \
         -a 2000 -b 2000 \
         --regionBodyLength 5000 \
         --binSize 50 \
         --missingDataAsZero \
         -o ${OUTPUT_DIR}/${varieties}_IP_intergenic_regions_matrix.gz \
         --samplesLabel "Rloop" "wRloop" "cRloop" 
-
 echo "生成${varieties} IP的热图"
     plotHeatmap \
         -m ${OUTPUT_DIR}/${varieties}_IP_intergenic_regions_matrix.gz \
@@ -376,7 +437,7 @@ echo "生成${varieties} IP的热图"
 echo "生成${varieties} input的矩阵"
     computeMatrix scale-regions \
         -S "${FULL_BW_DIR}/${varieties}_input_full.bw" "${WCRLOOP_BW_DIR}/${varieties}_input_wRloop.merged.bam.bw" "${WCRLOOP_BW_DIR}/${varieties}_input_cRloop.merged.bam.bw" \
-        -R "${BED_DIR}/${varieties}_input_intergenic.bed" "${BED_DIR}/${varieties}_input_sense.bed" "${BED_DIR}/${varieties}_input_antisense.bed" \
+        -R "${BED_DIR}/${varieties}_input_intergenic_regions.bed" "${BED_DIR}/${varieties}_input_sense_genes.bed" "${BED_DIR}/${varieties}_input_antisense_genes.bed" \
         -a 2000 -b 2000 \
         --regionBodyLength 5000 \
         --binSize 50 \
@@ -396,8 +457,8 @@ echo "生成${varieties} input的热图"
         --dpi 300
 done
 echo "结束时间：$(date)"
-chmod u+x heatmap_intergenic.sh
-nohup ./heatmap_intergenic.sh > heatmap_intergenic.log 2>&1 &
+chmod u+x heatmap_intergenic_narrowpeak.sh
+nohup ./heatmap_intergenic_narrowpeak.sh > heatmap_intergenic_narrowpeak.log 2>&1 &
 
 vim pieplot_create.sh
 #!/bin/bash
