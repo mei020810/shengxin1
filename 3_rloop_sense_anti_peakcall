@@ -429,7 +429,6 @@ echo "生成${varieties} IP的热图"
         -m ${OUTPUT_DIR}/${varieties}_IP_intergenic_regions_matrix.gz \
         -o ${OUTPUT_DIR}/${varieties}_IP_intergenic_heatmap.pdf \
         --colorMap RdYlBu \
-
         --plotTitle "${varieties} IP R-loop Signal" \
         --regionsLabel "intergenic" "sense" "antisense" \
         --dpi 300
@@ -451,7 +450,6 @@ echo "生成${varieties} input的热图"
         -m ${OUTPUT_DIR}/${varieties}_input_intergenic_regions_matrix.gz \
         -o ${OUTPUT_DIR}/${varieties}_input_intergenic_heatmap.pdf \
         --colorMap RdYlBu \
-
         --plotTitle "${varieties} input R-loop Signal" \
         --regionsLabel "intergenic" "sense" "antisense" \
         --dpi 300
@@ -498,7 +496,7 @@ for (peak_path in peak_files) {
   )
   pdf(file.path(out_dir, paste0(sample_name, "_peakAnno_pie.pdf")),
       width = 6, height = 6)
-  plotAnnoPie(peakAnno)
+  plotAnnoPie(peakAnno, main = paste0(sample_name))
   dev.off()
 }
 message("All pie plots saved to: ", out_dir)
