@@ -421,6 +421,8 @@ echo "生成${varieties} IP的矩阵"
         -a 2000 -b 2000 \
         --regionBodyLength 5000 \
         --binSize 50 \
+		--yMax 250 \
+		--zMin 0 --zMax 160 \
         --missingDataAsZero \
         -o ${OUTPUT_DIR}/${varieties}_IP_intergenic_regions_matrix.gz \
         --samplesLabel "Rloop" "wRloop" "cRloop" 
@@ -440,6 +442,8 @@ echo "生成${varieties} input的矩阵"
         -a 2000 -b 2000 \
         --regionBodyLength 5000 \
         --binSize 50 \
+		--yMax 60 \
+		--zMin 0 --zMax 80 \
         --missingDataAsZero \
         -o ${OUTPUT_DIR}/${varieties}_input_intergenic_regions_matrix.gz \
         --samplesLabel "Rloop" "wRloop" "cRloop" \
