@@ -421,8 +421,6 @@ echo "生成${varieties} IP的矩阵"
         -a 2000 -b 2000 \
         --regionBodyLength 5000 \
         --binSize 50 \
-		--yMax 250 \
-		--zMin 0 --zMax 160 \
         --missingDataAsZero \
         -o ${OUTPUT_DIR}/${varieties}_IP_intergenic_regions_matrix.gz \
         --samplesLabel "Rloop" "wRloop" "cRloop" 
@@ -431,6 +429,8 @@ echo "生成${varieties} IP的热图"
         -m ${OUTPUT_DIR}/${varieties}_IP_intergenic_regions_matrix.gz \
         -o ${OUTPUT_DIR}/${varieties}_IP_intergenic_heatmap.pdf \
         --colorMap RdYlBu \
+		--yMax 250 \
+		--zMin 0 --zMax 160 \
         --plotTitle "${varieties} IP R-loop Signal" \
         --regionsLabel "intergenic" "sense" "antisense" \
         --dpi 300
@@ -438,22 +438,20 @@ echo "生成${varieties} IP的热图"
 echo "生成${varieties} input的矩阵"
     computeMatrix scale-regions \
         -S "${FULL_BW_DIR}/${varieties}_input_full.bw" "${WCRLOOP_BW_DIR}/${varieties}_input_wRloop.merged.bam.bw" "${WCRLOOP_BW_DIR}/${varieties}_input_cRloop.merged.bam.bw" \
-        -R "${BED_DIR}/${varieties}_input_intergenic_regions.bed" "${BED_DIR}/${varieties}_input_sense_genes.bed" "${BED_DIR}/${varieties}_input_antisense_genes.bed" \
+        -R "${BED_DIR}/${varieties}_IP_intergenic_regions.bed" "${BED_DIR}/${varieties}_IP_sense_genes.bed" "${BED_DIR}/${varieties}_IP_antisense_genes.bed" \
         -a 2000 -b 2000 \
         --regionBodyLength 5000 \
         --binSize 50 \
-		--yMax 60 \
-		--zMin 0 --zMax 80 \
         --missingDataAsZero \
         -o ${OUTPUT_DIR}/${varieties}_input_intergenic_regions_matrix.gz \
-        --samplesLabel "Rloop" "wRloop" "cRloop" \
-
-
+        --samplesLabel "Rloop" "wRloop" "cRloop" 
 echo "生成${varieties} input的热图"
     plotHeatmap \
         -m ${OUTPUT_DIR}/${varieties}_input_intergenic_regions_matrix.gz \
         -o ${OUTPUT_DIR}/${varieties}_input_intergenic_heatmap.pdf \
         --colorMap RdYlBu \
+		--yMax 250 \
+		--zMin 0 --zMax 160 \ #125 40
         --plotTitle "${varieties} input R-loop Signal" \
         --regionsLabel "intergenic" "sense" "antisense" \
         --dpi 300
