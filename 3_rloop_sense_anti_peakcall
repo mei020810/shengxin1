@@ -505,3 +505,604 @@ message("All pie plots saved to: ", out_dir)
 '
 chmod u+x pieplot_create.sh
 ./pieplot_create.sh
+
+
+vim gc_at_skew_equal_body.py
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+"""
+GC/AT skew 公式：
+    GC skew = (G - C) / (G + C) * 100
+    AT skew = (A - T) / (A + T) * 100
+
+用法示例：
+
+  # peak 模式：上/下游各 1000bp，bin=20bp，body 等分 100 份
+  python gc_at_skew_equal_body.py genome.fa peaks.narrowPeak \
+         1000 1000 20 --mode peak --body-bins 100 > result_peak.txt
+
+  # summit 模式：summit ±1000bp，bin=20bp
+  python gc_at_skew_equal_body.py genome.fa peaks.narrowPeak \
+         1000 1000 20 --mode summit > result_summit.txt
+"""
+
+import sys
+import math
+import argparse
+
+
+# ----------------- 基础函数 -----------------
+
+def read_fasta(fasta_path):
+    """读取 fasta，返回 {chr: sequence}"""
+    seq_dict = {}
+    chr_name = None
+    seq_chunks = []
+
+    with open(fasta_path) as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            if line.startswith(">"):
+                if chr_name is not None:
+                    seq_dict[chr_name] = "".join(seq_chunks).upper()
+                chr_name = line[1:].split()[0]
+                seq_chunks = []
+            else:
+                seq_chunks.append(line)
+
+    if chr_name is not None:
+        seq_dict[chr_name] = "".join(seq_chunks).upper()
+
+    return seq_dict
+
+
+def calculate_gc_at_skew(seq):
+    """给定一段序列，计算 GC skew 和 AT skew（*100 变百分数）"""
+    seq = seq.upper()
+    a = seq.count("A")
+    t = seq.count("T")
+    g = seq.count("G")
+    c = seq.count("C")
+
+    gc_total = g + c
+    at_total = a + t
+
+    gc_skew = ((g - c) / gc_total * 100.0) if gc_total > 0 else 0.0
+    at_skew = ((a - t) / at_total * 100.0) if at_total > 0 else 0.0
+
+    return gc_skew, at_skew
+
+
+def parse_peak_line(line, need_summit):
+    """
+    解析一行 peak（BED 或 narrowPeak）
+    返回 dict: {chrom, start, end, name, summit_offset 或 None}
+    """
+    parts = line.strip().split()
+    if len(parts) < 3:
+        return None
+
+    chrom = parts[0]
+    start = int(parts[1])
+    end = int(parts[2])
+
+    if end <= start:
+        return None
+
+    name = f"{chrom}:{start}-{end}"
+    if len(parts) > 3:
+        name = parts[3]
+
+    summit_offset = None
+    if need_summit and len(parts) >= 10:
+        try:
+            summit_offset = int(parts[9])  # narrowPeak 第10列
+        except ValueError:
+            summit_offset = None
+
+    return {
+        "chrom": chrom,
+        "start": start,
+        "end": end,
+        "name": name,
+        "summit_offset": summit_offset,
+    }
+
+
+def linspace_edges_int(start, end, n_bins):
+    """
+    把 [start, end) 按 n_bins 份等分，返回 n_bins+1 个整数边界。
+    用 round 做整数化，保证第一个= start，最后一个= end。
+    """
+    if n_bins <= 0 or end <= start:
+        return [start, end]
+    length = end - start
+    edges = []
+    for i in range(n_bins + 1):
+        x = start + round(i * length / n_bins)
+        if x < start:
+            x = start
+        if x > end:
+            x = end
+        edges.append(x)
+    return edges
+
+
+# ----------------- 各模式计算 -----------------
+
+def process_peak_mode_one_peak(seq, chr_len, peak_info,
+                               upstream, downstream,
+                               bin_size, body_bins):
+    """
+    peak 模式：
+      upstream: [start - upstream, start)
+      body    : [start, end)  -> 等分 body_bins 份
+      downstream: [end, end + downstream)
+    返回该 peak 所有 bin 的结果列表（每个元素是 dict）
+    """
+    chrom = peak_info["chrom"]
+    start = peak_info["start"]
+    end = peak_info["end"]
+    peak_id = peak_info["name"]
+
+    # 定义三段边界
+    up_start = start - upstream
+    up_end = start
+    body_start = start
+    body_end = end
+    down_start = end
+    down_end = end + downstream
+
+    # 保证不越界：这里选择“越界就丢弃该 peak”，保持所有 bin 长度一致
+    if up_start < 0 or down_end > chr_len:
+        # 你也可以改成截断而不是跳过，这里更严格一点
+        return []
+
+    results = []
+
+    # -------- 上游：固定 bin_size --------
+    up_len = up_end - up_start
+    n_up_bins = up_len // bin_size  # 只用能整除的部分，尾巴丢弃
+    for i in range(n_up_bins):
+        b_start = up_start + i * bin_size
+        b_end = b_start + bin_size
+        sub = seq[b_start:b_end]
+        if not sub:
+            continue
+        gc_skew, at_skew = calculate_gc_at_skew(sub)
+        rel_pos = b_start - start  # 相对 peak_start，负数
+        results.append({
+            "peak_id": peak_id,
+            "chrom": chrom,
+            "region_type": "upstream",
+            "bin_index": i,
+            "abs_start": b_start,
+            "abs_end": b_end,
+            "rel_position": float(rel_pos),
+            "gc_skew": gc_skew,
+            "at_skew": at_skew,
+            "seq_length": b_end - b_start,
+        })
+
+    # -------- body：等份 body_bins --------
+    body_len = body_end - body_start
+    if body_len > 0 and body_bins > 0:
+        edges = linspace_edges_int(body_start, body_end, body_bins)
+        for i in range(body_bins):
+            b_start = edges[i]
+            b_end = edges[i + 1]
+            if b_end <= b_start:
+                continue  # 零宽 bin 跳过
+            sub = seq[b_start:b_end]
+            if not sub:
+                continue
+            gc_skew, at_skew = calculate_gc_at_skew(sub)
+            # 用 body 的百分比位置表示相对坐标（0~100）
+            body_frac = (b_start - body_start) / body_len * 100.0
+            results.append({
+                "peak_id": peak_id,
+                "chrom": chrom,
+                "region_type": "body",
+                "bin_index": i,
+                "abs_start": b_start,
+                "abs_end": b_end,
+                "rel_position": body_frac,  # body 内 0~100%
+                "gc_skew": gc_skew,
+                "at_skew": at_skew,
+                "seq_length": b_end - b_start,
+            })
+
+    # -------- 下游：固定 bin_size --------
+    down_len = down_end - down_start
+    n_down_bins = down_len // bin_size
+    for i in range(n_down_bins):
+        b_start = down_start + i * bin_size
+        b_end = b_start + bin_size
+        sub = seq[b_start:b_end]
+        if not sub:
+            continue
+        gc_skew, at_skew = calculate_gc_at_skew(sub)
+        rel_pos = b_start - end  # 相对 peak_end，>=0
+        results.append({
+            "peak_id": peak_id,
+            "chrom": chrom,
+            "region_type": "downstream",
+            "bin_index": i,
+            "abs_start": b_start,
+            "abs_end": b_end,
+            "rel_position": float(rel_pos),
+            "gc_skew": gc_skew,
+            "at_skew": at_skew,
+            "seq_length": b_end - b_start,
+        })
+
+    return results
+
+
+def process_summit_mode_one_peak(seq, chr_len, peak_info,
+                                 upstream, downstream, bin_size):
+    """
+    summit 模式：
+      以 summit 或 peak 中点为中心：
+        upstream : [summit - upstream, summit)
+        downstream: [summit, summit + downstream)
+      整个窗口即 “summit + 上下游 1kb”。
+    返回该 peak 所有 bin 的结果列表。
+    """
+    chrom = peak_info["chrom"]
+    start = peak_info["start"]
+    end = peak_info["end"]
+    peak_id = peak_info["name"]
+
+    # 定位 summit
+    if peak_info["summit_offset"] is not None:
+        summit = start + peak_info["summit_offset"]
+    else:
+        summit = (start + end) // 2
+
+    up_start = summit - upstream
+    up_end = summit
+    down_start = summit
+    down_end = summit + downstream
+
+    if up_start < 0 or down_end > chr_len:
+        return []
+
+    results = []
+
+    # 上游
+    up_len = up_end - up_start
+    n_up_bins = up_len // bin_size
+    for i in range(n_up_bins):
+        b_start = up_start + i * bin_size
+        b_end = b_start + bin_size
+        sub = seq[b_start:b_end]
+        if not sub:
+            continue
+        gc_skew, at_skew = calculate_gc_at_skew(sub)
+        # 相对位置：相对 summit，负数
+        rel_pos = (b_start + b_end) / 2.0 - summit
+        results.append({
+            "peak_id": peak_id,
+            "chrom": chrom,
+            "region_type": "upstream",
+            "bin_index": i,
+            "abs_start": b_start,
+            "abs_end": b_end,
+            "rel_position": rel_pos,
+            "gc_skew": gc_skew,
+            "at_skew": at_skew,
+            "seq_length": b_end - b_start,
+        })
+
+    # 下游
+    down_len = down_end - down_start
+    n_down_bins = down_len // bin_size
+    for i in range(n_down_bins):
+        b_start = down_start + i * bin_size
+        b_end = b_start + bin_size
+        sub = seq[b_start:b_end]
+        if not sub:
+            continue
+        gc_skew, at_skew = calculate_gc_at_skew(sub)
+        # 相对位置：相对 summit，正数
+        rel_pos = (b_start + b_end) / 2.0 - summit
+        results.append({
+            "peak_id": peak_id,
+            "chrom": chrom,
+            "region_type": "downstream",
+            "bin_index": i,
+            "abs_start": b_start,
+            "abs_end": b_end,
+            "rel_position": rel_pos,
+            "gc_skew": gc_skew,
+            "at_skew": at_skew,
+            "seq_length": b_end - b_start,
+        })
+
+    return results
+
+
+# ----------------- 主函数 -----------------
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="计算 peak 区域 GC/AT skew（peak 等份 body / summit ±上下游）"
+    )
+    parser.add_argument("genome", help="基因组 FASTA 文件")
+    parser.add_argument("peaks", help="peak 文件（BED / narrowPeak）")
+    parser.add_argument("upstream", type=int, help="上游长度（bp，如 1000）")
+    parser.add_argument("downstream", type=int, help="下游长度（bp，如 1000）")
+    parser.add_argument("bin_size", type=int, help="bin 大小（bp，如 20 或 50）")
+
+    parser.add_argument(
+        "--mode",
+        choices=["peak", "summit"],
+        default="peak",
+        help="peak：peak 起止 + 上/下游；summit：summit ± 上/下游",
+    )
+    parser.add_argument(
+        "--body-bins",
+        type=int,
+        default=100,
+        help="peak 模式下 body 等分份数（默认 100）",
+    )
+
+    args = parser.parse_args()
+
+    genome = read_fasta(args.genome)
+
+    # 表头
+    print(
+        "peak_id\tchrom\tregion_type\tbin_index\tabs_start\tabs_end"
+        "\trel_position\tgc_skew\tat_skew\tseq_length\tmode"
+    )
+
+    need_summit = (args.mode == "summit")
+    total_peaks = 0
+    used_peaks = 0
+
+    with open(args.peaks) as f:
+        for line in f:
+            if not line.strip() or line.startswith("#"):
+                continue
+
+            peak_info = parse_peak_line(line, need_summit)
+            if not peak_info:
+                continue
+
+            chrom = peak_info["chrom"]
+            if chrom not in genome:
+                print(
+                    f"Warning: chromosome {chrom} not in genome, skip peak {peak_info['name']}",
+                    file=sys.stderr,
+                )
+                continue
+
+            seq = genome[chrom]
+            chr_len = len(seq)
+
+            if args.mode == "peak":
+                bins = process_peak_mode_one_peak(
+                    seq, chr_len, peak_info,
+                    args.upstream, args.downstream,
+                    args.bin_size, args.body_bins,
+                )
+            else:
+                bins = process_summit_mode_one_peak(
+                    seq, chr_len, peak_info,
+                    args.upstream, args.downstream,
+                    args.bin_size,
+                )
+
+            if bins:
+                used_peaks += 1
+
+            for b in bins:
+                print(
+                    f"{b['peak_id']}\t{b['chrom']}\t{b['region_type']}\t"
+                    f"{b['bin_index']}\t{b['abs_start']}\t{b['abs_end']}\t"
+                    f"{b['rel_position']:.4f}\t{b['gc_skew']:.4f}\t{b['at_skew']:.4f}\t"
+                    f"{b['seq_length']}\t{args.mode}"
+                )
+
+            total_peaks += 1
+            if total_peaks % 100 == 0:
+                print(f"Processed {total_peaks} peaks...", file=sys.stderr)
+
+    print(f"Total peaks: {total_peaks}", file=sys.stderr)
+    print(f"Peaks used (not trimmed by edges): {used_peaks}", file=sys.stderr)
+    print(f"Mode: {args.mode}", file=sys.stderr)
+
+
+if __name__ == "__main__":
+    main()
+
+
+vim run_gc_at_skew.sh 
+#!/bin/bash
+set -euo pipefail
+
+GENOME=/data/mshe/rloopData/Gmax_508_v4.0.fa                                      
+SCRIPT=/data/mshe/rloopData/gc_at_skew_equal_body.py 
+PEAK_DIR=/data/mshe/rloopData/macs3_results_merge_full 
+OUT_DIR=/data/mshe/rloopData/gc_at_skew
+mkdir -p "${OUT_DIR}"
+
+# 定义绘图函数
+plot_peak_skew() {
+    local input_file="$1"
+    local output_prefix="$2"
+    local title="$3"
+    
+    Rscript -e "
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+
+df <- read.table('${input_file}', header = TRUE, sep = '\t')
+agg <- df %>%
+  group_by(region_type, bin_index) %>%
+  summarise(
+    gc = mean(gc_skew),
+    at = mean(at_skew),
+    .groups = 'drop'
+  )
+
+# 计算x轴
+up_bins <- 50  # 1000/20
+down_bins <- 50
+body_bins <- 100
+
+agg <- agg %>%
+  mutate(
+    x_scaled = case_when(
+      region_type == 'upstream' ~ -1 + (bin_index + 0.5) / up_bins,
+      region_type == 'body' ~ (bin_index + 0.5) / body_bins,
+      region_type == 'downstream' ~ 1 + (bin_index + 0.5) / down_bins
+    )
+  )
+agg_long <- agg %>%
+  pivot_longer(
+    cols = c(gc, at),
+    names_to = 'type',
+    values_to = 'skew'
+  )
+breaks <- c(-1, 0, 1, 2)
+labels <- c('-1 kb', 'peak start', 'peak end', '+1 kb')
+
+p <- ggplot(agg_long, aes(x = x_scaled, y = skew, colour = type)) +
+  geom_line() +
+  # 虚线：peak start / peak end
+  geom_vline(xintercept = 0, linetype = 'dashed') +
+  geom_vline(xintercept = 1, linetype = 'dashed') +
+  scale_x_continuous(breaks = breaks, labels = labels) +
+  labs(
+    x = 'Position',
+    y = 'Skew (%)',
+    colour = 'Type',
+    title = '${title}'
+  ) +
+  theme_bw()
+ggsave('${output_prefix}_peak_skew.pdf', p, width = 8, height = 4)
+cat('Plot saved to: ${output_prefix}_peak_skew.pdf\n')
+"
+}
+
+plot_summit_skew() {
+    local input_file="$1"
+    local output_prefix="$2"
+    local title="$3"
+    
+    Rscript -e "
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+
+df <- read.table('${input_file}', header = TRUE, sep = '\t')
+agg <- df %>%
+  group_by(region_type, bin_index) %>%
+  summarise(
+    gc = mean(gc_skew),
+    at = mean(at_skew),
+    .groups = 'drop'
+  )
+
+# 计算x轴
+up_bins <- 50  # 1000/20
+down_bins <- 50
+
+agg <- agg %>%
+  mutate(
+    x_scaled = case_when(
+      region_type == 'upstream' ~ -1 + (bin_index + 0.5) / up_bins,
+      region_type == 'downstream' ~ (bin_index + 0.5) / down_bins
+    )
+  )
+
+agg_long <- agg %>%
+  pivot_longer(
+    cols = c(gc, at),
+    names_to = 'type',
+    values_to = 'skew'
+  )
+
+p <- ggplot(agg_long, aes(x = x_scaled, y = skew, colour = type)) +
+  geom_line() +
+  geom_vline(xintercept = 0, linetype = 'dashed') +
+  scale_x_continuous(
+    breaks = c(-1, 0, 1),
+    labels = c('-1 kb', 'summit', '+1 kb')
+  ) +
+  labs(
+    x = 'Position',
+    y = 'Skew (%)',
+    colour = 'Type',
+    title = '${title}'
+  ) +
+  theme_bw()
+
+ggsave('${output_prefix}_summit_skew.pdf', p, width = 8, height = 4)
+cat('Plot saved to: ${output_prefix}_summit_skew.pdf\n')
+"
+}
+
+# 处理每个样本
+for var in HC22 HH43 HX3 Wm82 ZH13; do
+    # peak模式
+    for type in IP Input; do
+        echo "=== ${var} ${type} peak mode ==="
+        
+        if [ "$type" = "Input" ]; then
+            peak_file="${var}_input_x800_bw2_full_nomodel.macs3_peaks.narrowPeak"
+        else
+            peak_file="${var}_IP_x800_bw2_full_nomodel.macs3_peaks.narrowPeak"
+        fi
+        
+        # 计算skew
+        python "${SCRIPT}" \
+            "${GENOME}" \
+            "${PEAK_DIR}/${peak_file}" \
+            1000 1000 20 \
+            --mode peak \
+            --body-bins 100 \
+            > "${OUT_DIR}/${var}_${type}_peak_gc_at_skew.txt"
+        
+        # 绘图
+        plot_peak_skew \
+            "${OUT_DIR}/${var}_${type}_peak_gc_at_skew.txt" \
+            "${OUT_DIR}/${var}_${type}" \
+            "${var}-${type} - peak mode"
+    done
+    
+    # summit模式
+    for type in IP Input; do
+        echo "=== ${var} ${type} summit mode ==="
+        
+        if [ "$type" = "Input" ]; then
+            peak_file="${var}_input_x800_bw2_full_nomodel.macs3_peaks.narrowPeak"
+        else
+            peak_file="${var}_IP_x800_bw2_full_nomodel.macs3_peaks.narrowPeak"
+        fi
+        
+        # 计算skew
+        python "${SCRIPT}" \
+            "${GENOME}" \
+            "${PEAK_DIR}/${peak_file}" \
+            1000 1000 20 \
+            --mode summit \
+            > "${OUT_DIR}/${var}_${type}_summit_gc_at_skew.txt"
+        
+        # 绘图
+        plot_summit_skew \
+            "${OUT_DIR}/${var}_${type}_summit_gc_at_skew.txt" \
+            "${OUT_DIR}/${var}_${type}" \
+            "${var}-${type} - summit mode"
+    done
+done
+echo "所有计算和绘图完成！"
+chmod u+x run_gc_at_skew.sh
+./run_gc_at_skew.sh
