@@ -571,6 +571,114 @@ chmod u+x create_all_genes_bed.sh
 ./create_all_genes_bed.sh
 
 
+vim final_sense_anti_bam.sh
+#!/bin/bash
+set -euo pipefail
+
+ANNOT_DIR="/data/mshe/rloopData/annotation"
+GENES_PLUS="${ANNOT_DIR}/genes_plus1.bed"
+GENES_MINUS="${ANNOT_DIR}/genes_minus1.bed"
+BAM_DIR="/data/mshe/rloopData/merge_rep_bam_wcRloop"
+OUT_DIR="/data/mshe/rloopData/final_sense_anti_bam"
+mkdir -p "$OUT_DIR"
+
+varieties=("HC22" "HH43" "HX3" "Wm82" "ZH13")
+types=("IP" "input")
+
+for var in "${varieties[@]}"; do
+  for t in "${types[@]}"; do
+    echo "=== 处理 ${var} ${t} ==="
+    # 指定 wRloop / cRloop 文件名格式
+    wfile="${BAM_DIR}/${var}_${t}_wRloop.merged.bam"
+    cfile="${BAM_DIR}/${var}_${t}_cRloop.merged.bam"
+    out_sense="${OUT_DIR}/${var}_${t}_sense_final.bam"
+    out_anti="${OUT_DIR}/${var}_${t}_antisense_final.bam"
+    out_intergenic="${OUT_DIR}/${var}_${t}_intergenic.bam"
+
+    # 临时中间文件
+    tmpdir=$(mktemp -d)
+    trap 'rm -rf "$tmpdir"' EXIT
+    parts=()
+    intergenic_parts=()
+
+    #  wRloop + genes_plus => sense ; wRloop + genes_minus => antisense
+    if [ -f "$wfile" ]; then
+      echo "  处理 wRloop: $wfile"
+      bedtools intersect -abam "$wfile" -b "$GENES_PLUS" -wa -u > "${tmpdir}/w_plus.bam"
+      bedtools intersect -abam "$wfile" -b "$GENES_MINUS" -wa -u > "${tmpdir}/w_minus.bam"
+      # 计算 intergenic
+      bedtools intersect -abam "$wfile" -v -b "$GENES_PLUS" -v -b "$GENES_MINUS" -wa > "${tmpdir}/w_intergenic.bam"
+      # append to lists
+      parts+=("${tmpdir}/w_plus.bam::sense" "${tmpdir}/w_minus.bam::anti")
+      intergenic_parts+=("${tmpdir}/w_intergenic.bam")
+    else
+      echo "  没有找到 $wfile ，跳过 wRloop"
+    fi
+
+    #  cRloop + genes_minus => sense ; cRloop + genes_plus => antisense
+    if [ -f "$cfile" ]; then
+      echo "  处理 cRloop: $cfile"
+      bedtools intersect -abam "$cfile" -b "$GENES_MINUS" -wa -u > "${tmpdir}/c_minus.bam"
+      bedtools intersect -abam "$cfile" -b "$GENES_PLUS" -wa -u > "${tmpdir}/c_plus.bam"
+      # 计算 intergenic
+      bedtools intersect -abam "$cfile" -v -b "$GENES_PLUS" -v -b "$GENES_MINUS" -wa > "${tmpdir}/c_intergenic.bam"
+      parts+=("${tmpdir}/c_minus.bam::sense" "${tmpdir}/c_plus.bam::anti")
+      intergenic_parts+=("${tmpdir}/c_intergenic.bam")
+    else
+      echo "  没有找到 $cfile ，跳过 cRloop"
+    fi
+
+    # 合并 sense parts
+    sense_parts=()
+    anti_parts=()
+    for p in "${parts[@]}"; do
+      file="${p%%::*}"
+      tag="${p##*::}"
+      if [ "$tag" == "sense" ]; then
+        # file may be empty - only add if non-empty
+        if [ -s "$file" ]; then sense_parts+=("$file"); fi
+      else
+        if [ -s "$file" ]; then anti_parts+=("$file"); fi
+      fi
+    done
+
+    # 合并并写入最终 bam
+    if [ ${#sense_parts[@]} -gt 0 ]; then
+      echo "  合并 sense (${#sense_parts[@]})"
+      samtools merge -f "$out_sense" "${sense_parts[@]}"
+      samtools index "$out_sense"
+    else
+      echo "  没有 sense reads，跳过生成 $out_sense"
+    fi
+
+    if [ ${#anti_parts[@]} -gt 0 ]; then
+      echo "  合并 antisense (${#anti_parts[@]})"
+      samtools merge -f "$out_anti" "${anti_parts[@]}"
+      samtools index "$out_anti"
+    else
+      echo "  没有 antisense reads，跳过生成 $out_anti"
+    fi
+
+    # 合并 intergenic parts
+    if [ ${#intergenic_parts[@]} -gt 0 ]; then
+      echo "  合并 intergenic (${#intergenic_parts[@]})"
+      samtools merge -f "$out_intergenic" "${intergenic_parts[@]}"
+      samtools index "$out_intergenic"
+    else
+      echo "  没有 intergenic reads，跳过生成 $out_intergenic"
+    fi
+
+    # 清理 trap 会删除临时目录
+    trap - EXIT
+    rm -rf "$tmpdir"
+  done
+done
+echo "全部完成。输出目录: $OUT_DIR"
+
+chmod u+x final_sense_anti_bam.sh
+nohup ./final_sense_anti_bam.sh > final_sense_anti_bam.log 2>&1 &
+
+
 vim sense_anti_classify.sh
 #!/bin/bash
 
