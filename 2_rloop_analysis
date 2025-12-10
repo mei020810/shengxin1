@@ -529,38 +529,6 @@ mv /data/mshe/rloopData/intervene_results/Intervene_venn.pdf /data/mshe/rloopDat
 
 vim create_all_genes_bed.sh
 #!/bin/bash
-
-GFF_FILE="/data/mshe/rloopData/Gmax_508_Wm82.a4.v1.gene.gff3"
-ANNOTATION_DIR="/data/mshe/rloopData/annotation"
-mkdir -p "$ANNOTATION_DIR"
-
-echo "提取基因信息..."
-awk '$3 == "gene" || $3 == "mRNA"' "$GFF_FILE" | \
-    awk -v OFS='\t' '{
-        # 提取ID
-        split($9, attr, ";");
-        id = "";
-        for(i in attr) {
-            if(attr[i] ~ /^ID=/) {
-                split(attr[i], id_part, "=");
-                id = id_part[2];
-                break;
-            }
-        }
-        # 输出BED格式：chr, start, end, id, score, strand
-        print $1, $4-1, $5, id, ".", $7
-    }' > "${ANNOTATION_DIR}/all_genes.bed"
-
-echo "分离正负链基因"
-awk '$6 == "+"' "${ANNOTATION_DIR}/all_genes.bed" > "${ANNOTATION_DIR}/genes_plus.bed"
-awk '$6 == "-"' "${ANNOTATION_DIR}/all_genes.bed" > "${ANNOTATION_DIR}/genes_minus.bed"
-
-echo "基因统计:"
-echo "正链基因: $(wc -l < ${ANNOTATION_DIR}/genes_plus.bed)"
-echo "负链基因: $(wc -l < ${ANNOTATION_DIR}/genes_minus.bed)"
-echo "总计: $(wc -l < ${ANNOTATION_DIR}/all_genes.bed)"
-chmod u+x create_all_genes_bed.sh
-./create_all_genes_bed.sh
 #只有基因的bed
 GFF_FILE="/data/mshe/rloopData/Gmax_508_Wm82.a4.v1.gene.gff3"
 ANNOTATION_DIR="/data/mshe/rloopData/annotation"
@@ -588,6 +556,19 @@ awk 'BEGIN { OFS="\t" }
 '  "/data/mshe/rloopData/annotation/genes.bed" > "/data/mshe/rloopData/annotation/genes_fixed.bed"
   awk '$6=="+"' "/data/mshe/rloopData/annotation/genes_fixed.bed" > "/data/mshe/rloopData/annotation/genes_plus1.bed"
   awk '$6=="-"' "/data/mshe/rloopData/annotation/genes_fixed.bed" > "/data/mshe/rloopData/annotation/genes_minus1.bed"
+生成基因间区域bed文件
+samtools faidx Gmax_508_v4.0.fa
+cut -f1 "/data/mshe/rloopData/Gmax_508_v4.0.fa.fai" > "/data/mshe/rloopData/chromosome_order.txt"
+# 首先合并所有基因区域（包括sense和antisense）
+cat "/data/mshe/rloopData/annotation/genes_plus1.bed" "/data/mshe/rloopData/annotation/genes_minus1.bed" | sort -k1,1 -k2,2n | bedtools sort -g "/data/mshe/rloopData/chromosome_order.txt" > "/data/mshe/rloopData/annotation/all_genes_combined_sorted1.bed"
+# 用bedtools complement获取基因间区域，需要基因组fai文件来定义染色体边界，需要排序的bed文件
+bedtools complement -i "/data/mshe/rloopData/annotation/all_genes_combined_sorted1.bed" -g "/data/mshe/rloopData/Gmax_508_v4.0.fa.fai" > "/data/mshe/rloopData/annotation/intergenic_regions1.bed"
+echo "sense基因数量: $(wc -l < "/data/mshe/rloopData/annotation/genes_plus1.bed")"
+echo "antisense基因数量: $(wc -l < "/data/mshe/rloopData/annotation/genes_minus1.bed")" 
+echo "intergenic区域数量: $(wc -l < "/data/mshe/rloopData/annotation/intergenic_regions1.bed")"
+
+chmod u+x create_all_genes_bed.sh
+./create_all_genes_bed.sh
 
 
 vim sense_anti_classify.sh
