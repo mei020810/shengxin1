@@ -25,190 +25,6 @@ echo "结束时间：$(date)"
 chmod u+x macs3_peakcall_sense_anti.sh
 nohup ./macs3_peakcall_sense_anti.sh > macs3_peakcall_sense_anti.log 2>&1 &
 #以上脚本得到的bed仅描述峰的位置，并不直接提供基因方向
-vim sense_anti_classify_final.sh
-#!/bin/bash
-set -euo pipefail
-WCRLOOP_DIR="/data/mshe/rloopData/merge_rep_bam_wcRloop"
-ANNOTATION_DIR="/data/mshe/rloopData/annotation"
-OUTPUT_DIR="/data/mshe/rloopData/final_sense_anti_bam/sense_anti_bed"
-mkdir -p "$OUTPUT_DIR"
-
-for wrloop_bam in ${WCRLOOP_DIR}/*_wRloop.merged.bam; do
-    sample=$(basename "$wrloop_bam" _wRloop.merged.bam)
-    echo "处理wRloop样本: $sample"
-    echo "识别Sense R-loops..."
-    
-    # 先将BAM转换为BED格式（也可以用管道传递，绕过中间文件生成bedtools bamtobed -i "merge_rep_bam_wcRloop/HC22_input_wRloop.merged.bam" | bedtools intersect -a stdin -b "annotation/genes_plus1.bed" -wa | head）
-    bedtools bamtobed -i "$wrloop_bam" > "${OUTPUT_DIR}/${sample}_wRloop_all.bed"
-    
-    # wRloop + 正链基因 → sense
-    bedtools intersect -a "${OUTPUT_DIR}/${sample}_wRloop_all.bed" -b "${ANNOTATION_DIR}/genes_plus1.bed" -wa > \
-        "${OUTPUT_DIR}/${sample}_wRloop_sense.bed"
-    # wRloop + 负链基因 → anti-sense
-    bedtools intersect -a "${OUTPUT_DIR}/${sample}_wRloop_all.bed" -b "${ANNOTATION_DIR}/genes_minus1.bed" -wa > \
-        "${OUTPUT_DIR}/${sample}_wRloop_antisense.bed"
-    # wRloop intergenic
-    bedtools intersect -a "${OUTPUT_DIR}/${sample}_wRloop_all.bed" -b "${ANNOTATION_DIR}/genes_fixed.bed" -v > \
-        "${OUTPUT_DIR}/${sample}_wRloop_intergenic.bed"
-    
-    echo "  Sense: $(wc -l < ${OUTPUT_DIR}/${sample}_wRloop_sense.bed)"
-    echo "  Anti-sense: $(wc -l < ${OUTPUT_DIR}/${sample}_wRloop_antisense.bed)"
-    echo "  Intergenic: $(wc -l < ${OUTPUT_DIR}/${sample}_wRloop_intergenic.bed)"
-    
-    # 清理临时文件
-    rm "${OUTPUT_DIR}/${sample}_wRloop_all.bed"
-done
-
-for crloop_bam in ${WCRLOOP_DIR}/*_cRloop.merged.bam; do
-    sample=$(basename "$crloop_bam" _cRloop.merged.bam)
-    echo "处理cRloop样本: $sample"
-    echo "识别Sense R-loops..."
-    
-    # 先将BAM转换为BED格式
-    bedtools bamtobed -i "$crloop_bam" > "${OUTPUT_DIR}/${sample}_cRloop_all.bed"
-    
-    # cRloop + 负链基因 → sense
-    bedtools intersect -a "${OUTPUT_DIR}/${sample}_cRloop_all.bed" -b "${ANNOTATION_DIR}/genes_minus1.bed" -wa > \
-        "${OUTPUT_DIR}/${sample}_cRloop_sense.bed"
-    # cRloop + 正链基因 → anti-sense
-    bedtools intersect -a "${OUTPUT_DIR}/${sample}_cRloop_all.bed" -b "${ANNOTATION_DIR}/genes_plus1.bed" -wa > \
-        "${OUTPUT_DIR}/${sample}_cRloop_antisense.bed"
-    # cRloop intergenic
-    bedtools intersect -a "${OUTPUT_DIR}/${sample}_cRloop_all.bed" -b "${ANNOTATION_DIR}/genes_fixed.bed" -v > \
-        "${OUTPUT_DIR}/${sample}_cRloop_intergenic.bed"
-    
-    echo "  Sense: $(wc -l < ${OUTPUT_DIR}/${sample}_cRloop_sense.bed)"
-    echo "  Anti-sense: $(wc -l < ${OUTPUT_DIR}/${sample}_cRloop_antisense.bed)"
-    echo "  Intergenic: $(wc -l < ${OUTPUT_DIR}/${sample}_cRloop_intergenic.bed)"
-    
-    # 清理临时文件
-    rm "${OUTPUT_DIR}/${sample}_cRloop_all.bed"
-done
-
-# 然后按品种合并
-for variety in HC22 HH43 HX3 Wm82 ZH13; do
-    echo "合并品种: $variety"
-    
-    # 合并sense peaks
-    cat "${OUTPUT_DIR}/${variety}_IP_wRloop_sense.bed" \
-        "${OUTPUT_DIR}/${variety}_IP_cRloop_sense.bed" 2>/dev/null | \
-        sort -k1,1 -k2,2n | uniq > \
-        "${OUTPUT_DIR}/${variety}_IP_sense.bed"
-    
-    cat "${OUTPUT_DIR}/${variety}_input_wRloop_sense.bed" \
-        "${OUTPUT_DIR}/${variety}_input_cRloop_sense.bed" 2>/dev/null | \
-        sort -k1,1 -k2,2n | uniq > \
-        "${OUTPUT_DIR}/${variety}_input_sense.bed"
-    
-    # 合并anti-sense peaks
-    cat "${OUTPUT_DIR}/${variety}_IP_wRloop_antisense.bed" \
-        "${OUTPUT_DIR}/${variety}_IP_cRloop_antisense.bed" 2>/dev/null | \
-        sort -k1,1 -k2,2n | uniq > \
-        "${OUTPUT_DIR}/${variety}_IP_antisense.bed"
-    
-    cat "${OUTPUT_DIR}/${variety}_input_wRloop_antisense.bed" \
-        "${OUTPUT_DIR}/${variety}_input_cRloop_antisense.bed" 2>/dev/null | \
-        sort -k1,1 -k2,2n | uniq > \
-        "${OUTPUT_DIR}/${variety}_input_antisense.bed"
-    
-    # 合并intergenic peaks
-    cat "${OUTPUT_DIR}/${variety}_IP_wRloop_intergenic.bed" \
-        "${OUTPUT_DIR}/${variety}_IP_cRloop_intergenic.bed" 2>/dev/null | \
-        sort -k1,1 -k2,2n | uniq > \
-        "${OUTPUT_DIR}/${variety}_IP_intergenic.bed"
-    
-    cat "${OUTPUT_DIR}/${variety}_input_wRloop_intergenic.bed" \
-        "${OUTPUT_DIR}/${variety}_input_cRloop_intergenic.bed" 2>/dev/null | \
-        sort -k1,1 -k2,2n | uniq > \
-        "${OUTPUT_DIR}/${variety}_input_intergenic.bed"
-
-    sense_IP_count=$(wc -l < "${OUTPUT_DIR}/${variety}_IP_sense.bed")
-    antisense_IP_count=$(wc -l < "${OUTPUT_DIR}/${variety}_IP_antisense.bed")
-    intergenic_IP_count=$(wc -l < "${OUTPUT_DIR}/${variety}_IP_intergenic.bed")
-    sense_input_count=$(wc -l < "${OUTPUT_DIR}/${variety}_input_sense.bed")
-    antisense_input_count=$(wc -l < "${OUTPUT_DIR}/${variety}_input_antisense.bed")
-    intergenic_input_count=$(wc -l < "${OUTPUT_DIR}/${variety}_input_intergenic.bed")
-    
-    echo "  Sense IP bed: $sense_IP_count"
-    echo "  Anti-sense IP bed: $antisense_IP_count"
-    echo "  intergenic IP bed: $intergenic_IP_count"
-    echo "  Sense input bed: $sense_input_count"
-    echo "  Anti-sense input bed: $antisense_input_count"
-    echo "  intergenic input bed: $intergenic_input_count"
-done
-chmod u+x sense_anti_classify_final.sh
-nohup ./sense_anti_classify_final.sh > sense_anti_classify_final.log 2>&1 &
-
-
-
-vim merge_intergenic_bed.sh
-#!/bin/bash
-PEAK_DIR="/data/mshe/rloopData/final_sense_anti_bam/peak"
-INTERGENIC_BED="/data/mshe/rloopData/annotation/intergenic_regions.bed"
-OUTPUT_DIR="/data/mshe/rloopData/final_sense_anti_bam/intergenic_peak"
-mkdir -p "$OUTPUT_DIR"
-
-echo "=== 合并wRloop和cRloop的基因间区域peaks ==="
-[ ! -f "$INTERGENIC_BED" ] && echo "错误: 找不到基因间区域文件" && exit 1
-for variety in HC22 HH43 HX3 Wm82 ZH13; do
-    echo "处理品种: $variety"
-    for type in IP input; do
-        echo "  处理$type数据..."
-        
-        # 合并sense peaks
-        cat "${PEAK_DIR}/${variety}_${type}_wRloop_sense.bed" \
-            "${PEAK_DIR}/${variety}_${type}_cRloop_sense.bed" 2>/dev/null | \
-            bedtools intersect -a stdin -b "$INTERGENIC_BED" -wa -u | \
-            sort -k1,1 -k2,2n | bedtools merge -i stdin > \
-            "${OUTPUT_DIR}/${variety}_${type}_sense_intergenic.bed"
-        
-        # 合并antisense peaks
-        cat "${PEAK_DIR}/${variety}_${type}_wRloop_antisense.bed" \
-            "${PEAK_DIR}/${variety}_${type}_cRloop_antisense.bed" 2>/dev/null | \
-            bedtools intersect -a stdin -b "$INTERGENIC_BED" -wa -u | \
-            sort -k1,1 -k2,2n | bedtools merge -i stdin > \
-            "${OUTPUT_DIR}/${variety}_${type}_antisense_intergenic.bed"
-        
-        # 统计
-        sense_count=$(wc -l < "${OUTPUT_DIR}/${variety}_${type}_sense_intergenic.bed" 2>/dev/null || echo "0")
-        anti_count=$(wc -l < "${OUTPUT_DIR}/${variety}_${type}_antisense_intergenic.bed" 2>/dev/null || echo "0")
-        echo "    ${type}: Sense=$sense_count, Anti=$anti_count"
-    done
-done
-echo "=== 完成 ==="
-echo "输出文件列表:"
-ls -1 "${OUTPUT_DIR}"/*.bed
-chmod u+x merge_intergenic_bed.sh
-./merge_intergenic_bed.sh
-
-#直接生成各类别合并的intergenic文件
-PEAK_DIR="/data/mshe/rloopData/final_sense_anti_bam/peak"
-INTERGENIC_BED="/data/mshe/rloopData/annotation/intergenic_regions.bed"
-OUTPUT_DIR="/data/mshe/rloopData/final_sense_anti_bam/intergenic_peak_merged"
-mkdir -p "$OUTPUT_DIR"
-for variety in HC22 HH43 HX3 Wm82 ZH13; do
-    echo "处理品种: $variety"
-    # 合并IP的sense和antisense intergenic peaks
-    cat "${PEAK_DIR}/${variety}_IP_wRloop_sense.bed" \
-        "${PEAK_DIR}/${variety}_IP_wRloop_antisense.bed" \
-        "${PEAK_DIR}/${variety}_IP_cRloop_sense.bed" \
-        "${PEAK_DIR}/${variety}_IP_cRloop_antisense.bed" 2>/dev/null | \
-        bedtools intersect -a stdin -b "$INTERGENIC_BED" -wa -u | \
-        sort -k1,1 -k2,2n | bedtools merge -i stdin > \
-        "${OUTPUT_DIR}/${variety}_IP_intergenic.bed"
-    # 合并input的sense和antisense intergenic peaks
-    cat "${PEAK_DIR}/${variety}_input_wRloop_sense.bed" \
-        "${PEAK_DIR}/${variety}_input_wRloop_antisense.bed" \
-        "${PEAK_DIR}/${variety}_input_cRloop_sense.bed" \
-        "${PEAK_DIR}/${variety}_input_cRloop_antisense.bed" 2>/dev/null | \
-        bedtools intersect -a stdin -b "$INTERGENIC_BED" -wa -u | \
-        sort -k1,1 -k2,2n | bedtools merge -i stdin > \
-        "${OUTPUT_DIR}/${variety}_input_intergenic.bed"
-    # 统计
-    ip_count=$(wc -l < "${OUTPUT_DIR}/${variety}_IP_intergenic.bed")
-    input_count=$(wc -l < "${OUTPUT_DIR}/${variety}_input_intergenic.bed")
-    echo "  IP: $ip_count, Input: $input_count"
-done
 
 
 vim heatmap_allregions.sh
@@ -1151,6 +967,190 @@ echo "所有计算和绘图完成！"
 chmod u+x run_gc_at_skew.sh
 ./run_gc_at_skew.sh
 
+# CHIP-seq实验的bw文件需要使用RPGC，RPGC参数需要用有效基因组大小，即fa减去n值
+awk '
+  /^>/ { next }                   # 去掉 fasta 的 header 行
+  {
+    total += length($0)           # 所有字符长度（A/C/G/T/N）
+    nline = gsub(/[Nn]/, "", $0)  # gsub 返回替换次数 = 本行 N 的个数
+    N_count += nline
+  }
+  END {
+    nonN = total - N_count
+    printf("total_bp = %d\nN_bp = %d\neffectiveGenomeSize(nonN) = %d\n",
+           total, N_count, nonN)
+  }
+' Gmax_508_v4.0.fa
+输出结果：
+total_bp = 978386919
+N_bp = 25907548
+effectiveGenomeSize(nonN) = 952479371
 
+# 重新创建bigwig文件
+mkdir -p /data/mshe/rloopData/bigwigs_RPGC
+for var in HC22 HH43 HX3 Wm82 ZH13; do
+	for type in IP input; do
+		for i in wRloop cRloop; do
+			bam_file=/data/mshe/rloopData/merge_rep_bam_wcRloop/${var}_${type}_${i}.merged.bam
+			sample=$(basename "$bam_file" .merged.bam)
+			bw_file=/data/mshe/rloopData/bigwigs_RPGC/${sample}_RPGC.bw
+			bamCoverage -b "$bam_file" -o "$bw_file" --binSize 10 --normalizeUsing RPGC --effectiveGenomeSize 952479371 -p 10
+		done
 
+		bam_file=/data/mshe/rloopData/merged_bam_full/${var}_${type}_merged.bam
+		sample=$(basename "$bam_file" _merged.bam)
+		bw_file=/data/mshe/rloopData/bigwigs_RPGC/${sample}_RPGC.bw
+		bamCoverage -b "$bam_file" -o "$bw_file" --binSize 10 --normalizeUsing RPGC --effectiveGenomeSize 952479371 -p 10
+	done
+done
 
+#统计sense和anti的重叠率
+mkdir sense_anti_overlap
+for var in HC22 HH43 HX3 Wm82 ZH13; do
+	for type in IP input; do
+sense_bed="/data/mshe/rloopData/narrowpeak_gene_regions/${var}_${type}_sense_genes.bed" 
+anti_bed="/data/mshe/rloopData/narrowpeak_gene_regions/${var}_${type}_antisense_genes.bed" 
+
+cut -f4 "$sense_bed" | sort -u > sense_anti_overlap/${var}_${type}_sense_ids.txt 
+cut -f4 "$anti_bed"  | sort -u > sense_anti_overlap/${var}_${type}_anti_ids.txt
+comm -12 sense_anti_overlap/${var}_${type}_sense_ids.txt sense_anti_overlap/${var}_${type}_anti_ids.txt > sense_anti_overlap/${var}_${type}_both_ids.txt
+both_n=$(wc -l < sense_anti_overlap/${var}_${type}_both_ids.txt)
+sense_n=$(wc -l < sense_anti_overlap/${var}_${type}_sense_ids.txt)
+anti_n=$(wc -l < sense_anti_overlap/${var}_${type}_anti_ids.txt)
+all_n=$(cat sense_anti_overlap/${var}_${type}_sense_ids.txt sense_anti_overlap/${var}_${type}_anti_ids.txt | sort -u | wc -l)
+
+echo "${var}_${type}中同时是 sense+anti 的基因数: $both_n"
+echo "${var}_${type}中sense 基因总数: $sense_n"
+echo "${var}_${type}中antisense 基因总数: $anti_n"
+echo "${var}_${type}中sense∪anti 的总基因数: $all_n" 
+awk -v a="$both_n" -v b="$sense_n" 'BEGIN{printf "both / sense = %.2f%%\n", 100*a/b}'
+awk -v a="$both_n" -v b="$anti_n" 'BEGIN{printf "both / antisense = %.2f%%\n", 100*a/b}'
+awk -v a="$both_n" -v b="$all_n" 'BEGIN{printf "both / (sense∪anti) = %.2f%%\n", 100*a/b}'
+done
+done
+
+#生成去除重叠基因的sense和antisense bed
+mkdir narrowpeak_gene_regions/non_overlap_sense_anti
+for var in HC22 HH43 HX3 Wm82 ZH13; do
+	for type in IP input; do
+		sense_bed="/data/mshe/rloopData/narrowpeak_gene_regions/${var}_${type}_sense_genes.bed" 
+		anti_bed="/data/mshe/rloopData/narrowpeak_gene_regions/${var}_${type}_antisense_genes.bed" 
+
+		comm -23 sense_anti_overlap/${var}_${type}_sense_ids.txt sense_anti_overlap/${var}_${type}_both_ids.txt > sense_anti_overlap/${var}_${type}_sense_only_ids.txt
+		comm -23 sense_anti_overlap/${var}_${type}_anti_ids.txt  sense_anti_overlap/${var}_${type}_both_ids.txt > sense_anti_overlap/${var}_${type}_anti_only_ids.txt
+		grep -F -f sense_anti_overlap/${var}_${type}_sense_only_ids.txt ${sense_bed} \
+  			> narrowpeak_gene_regions/non_overlap_sense_anti/${var}_${type}_sense_only_genes.bed
+		grep -F -f sense_anti_overlap/${var}_${type}_anti_only_ids.txt ${anti_bed} \
+  			> narrowpeak_gene_regions/non_overlap_sense_anti/${var}_${type}_antisense_only_genes.bed
+		grep -F -f sense_anti_overlap/${var}_${type}_both_ids.txt ${sense_bed} \
+  			> narrowpeak_gene_regions/non_overlap_sense_anti/${var}_${type}_sense_overlap_genes.bed
+	done
+done
+
+cd /data/mshe/rloopData/annotation
+cut -f4 all_genes_combined_sorted1.bed | sort -u > all_gene_combined_ids.txt
+
+vim make_noRloop_genes.sh
+#!/bin/bash
+set -euo pipefail
+
+REGION_DIR="/data/mshe/rloopData/narrowpeak_gene_regions"
+ANNOTATION_DIR="/data/mshe/rloopData/annotation"
+OUT_DIR="/data/mshe/rloopData/narrowpeak_gene_regions/noRloop_genes"
+mkdir -p "$OUT_DIR"
+
+ALL_GENES_BED="${ANNOTATION_DIR}/all_genes_combined_sorted1.bed"
+ALL_GENE_IDS="${ANNOTATION_DIR}/all_gene_combined_ids.txt"
+
+for var in HC22 HH43 HX3 Wm82 ZH13; do
+  for type in IP input; do
+    echo "== 处理 ${var}_${type} =="
+
+    sense_bed="${REGION_DIR}/${var}_${type}_sense_genes.bed"
+    anti_bed="${REGION_DIR}/${var}_${type}_antisense_genes.bed"
+
+    # 取这组样本里有 R-loop 的所有基因 ID（sense ∪ antisense）
+    cut -f4 "$sense_bed" | sort -u > "${OUT_DIR}/${var}_${type}_sense_ids.txt"
+    cut -f4 "$anti_bed"  | sort -u > "${OUT_DIR}/${var}_${type}_anti_ids.txt"
+
+    cat "${OUT_DIR}/${var}_${type}_sense_ids.txt" \
+        "${OUT_DIR}/${var}_${type}_anti_ids.txt" \
+      | sort -u > "${OUT_DIR}/${var}_${type}_senseAnti_union_ids.txt"
+
+    # all_genes 里减去 (sense ∪ antisense) = 没有 R-loop 的基因 ID
+    comm -23 "$ALL_GENE_IDS" "${OUT_DIR}/${var}_${type}_senseAnti_union_ids.txt" \
+      > "${OUT_DIR}/${var}_${type}_noRloop_ids.txt"
+
+    noR_n=$(wc -l < "${OUT_DIR}/${var}_${type}_noRloop_ids.txt")
+    echo "  无 R-loop 基因数: $noR_n"
+
+    # 用 ID 反筛出 BED
+    grep -F -f "${OUT_DIR}/${var}_${type}_noRloop_ids.txt" "$ALL_GENES_BED" \
+      > "${OUT_DIR}/${var}_${type}_noRloop_genes.bed"
+
+    echo "  输出: ${OUT_DIR}/${var}_${type}_noRloop_genes.bed"
+    echo
+  done
+done
+chmod +x make_noRloop_genes.sh
+./make_noRloop_genes.sh
+
+BW_DIR=/data/mshe/rloopData/bigwigs_RPGC
+BED_DIR=/data/mshe/rloopData/narrowpeak_gene_regions/noRloop_genes
+SABED_DIR=/data/mshe/rloopData/narrowpeak_gene_regions/non_overlap_sense_anti
+OUTPUT_DIR=/data/mshe/rloopData/bigwigs_RPGC/heatmap
+mkdir -p ${OUTPUT_DIR}
+varieties=HC22
+    computeMatrix scale-regions \
+        -S "${BW_DIR}/${varieties}_IP_RPGC.bw" "${BW_DIR}/${varieties}_IP_wRloop_RPGC.bw" "${BW_DIR}/${varieties}_IP_cRloop_RPGC.bw" \
+        -R "${BED_DIR}/${varieties}_IP_noRloop_genes.bed" "${SABED_DIR}/${varieties}_IP_sense_only_genes.bed" "${SABED_DIR}/${varieties}_IP_antisense_only_genes.bed" \
+        -a 2000 -b 2000 \
+        --regionBodyLength 5000 \
+        --binSize 50 \
+        --missingDataAsZero \
+        -o ${OUTPUT_DIR}/noRloop_test_matrix.gz \
+        --samplesLabel "Rloop" "wRloop" "cRloop" 
+
+    plotHeatmap \
+        -m ${OUTPUT_DIR}/noRloop_test_matrix.gz \
+        -o ${OUTPUT_DIR}/noRloop_test_heatmap.pdf \
+        --colorMap RdYlBu \
+        --plotTitle "${varieties} IP R-loop Signal" \
+        --regionsLabel "intergenic" "sense" "antisense" \
+        --dpi 300
+
+vim heatmap_RPGC_intergenic_narrowpeak.sh
+#!/bin/bash
+set -euo pipefail
+BW_DIR=/data/mshe/rloopData/bigwigs_RPGC
+BED_DIR=/data/mshe/rloopData/narrowpeak_gene_regions/noRloop_genes
+SABED_DIR=/data/mshe/rloopData/narrowpeak_gene_regions/non_overlap_sense_anti
+OUTPUT_DIR=/data/mshe/rloopData/bigwigs_RPGC/heatmap
+mkdir -p ${OUTPUT_DIR}
+echo "开始时间：$(date)"
+
+for varieties in HC22 HH43 HX3 Wm82 ZH13; do
+echo "生成${varieties} IP的矩阵"
+    computeMatrix scale-regions \
+        -S "${BW_DIR}/${varieties}_IP_RPGC.bw" "${BW_DIR}/${varieties}_IP_wRloop_RPGC.bw" "${BW_DIR}/${varieties}_IP_cRloop_RPGC.bw" \
+        -R "${BED_DIR}/${varieties}_IP_noRloop_genes.bed" "${SABED_DIR}/${varieties}_IP_sense_only_genes.bed" "${SABED_DIR}/${varieties}_IP_antisense_only_genes.bed" \
+        -a 2000 -b 2000 \
+        --regionBodyLength 5000 \
+        --binSize 50 \
+        --missingDataAsZero \
+        -o ${OUTPUT_DIR}/${varieties}_IP_intergenic_regions_matrix.gz \
+        --samplesLabel "Rloop" "wRloop" "cRloop" 
+echo "生成${varieties} IP的热图"
+    plotHeatmap \
+        -m ${OUTPUT_DIR}/${varieties}_IP_intergenic_regions_matrix.gz \
+        -o ${OUTPUT_DIR}/${varieties}_IP_intergenic_heatmap.pdf \
+        --colorMap RdYlBu \
+	--yMax 6 \
+	--zMin 0 --zMax 6 \
+        --plotTitle "${varieties} IP R-loop Signal" \
+        --regionsLabel "intergenic" "sense" "antisense" \
+        --dpi 300
+done
+echo "结束时间：$(date)"
+chmod +x heatmap_RPGC_intergenic_narrowpeak.sh
+nohup ./heatmap_RPGC_intergenic_narrowpeak.sh > heatmap_RPGC_intergenic_narrowpeak.log 2>&1 &
