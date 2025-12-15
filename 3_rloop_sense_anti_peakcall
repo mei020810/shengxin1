@@ -861,7 +861,11 @@ for var in HC22 HH43 HX3 Wm82 ZH13; do
     # peak模式
     for type in IP input; do
         echo "=== ${var} ${type} peak mode ==="
-        
+
+		if [ -f "${OUT_DIR}/${var}_${type}_peak_skew.pdf" ]; then
+			echo "=== ${var} ${type} peak mode (full) 已有 pdf，跳过 ==="
+      		continue
+    	fi
         if [ "$type" = "input" ]; then
             peak_file="${var}_input_x800_bw2_full_nomodel.macs3_peaks.narrowPeak"
         else
@@ -887,7 +891,11 @@ for var in HC22 HH43 HX3 Wm82 ZH13; do
     # summit模式
     for type in IP input; do
         echo "=== ${var} ${type} summit mode ==="
-        
+
+		if [ -f "${OUT_DIR}/${var}_${type}_summit_skew.pdf" ]; then
+			echo "=== ${var} ${type} summit mode (full) 已有 pdf，跳过 ==="
+      		continue
+    	fi
         if [ "$type" = "input" ]; then
             peak_file="${var}_input_x800_bw2_full_nomodel.macs3_peaks.narrowPeak"
         else
