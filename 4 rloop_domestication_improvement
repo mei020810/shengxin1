@@ -5,3 +5,69 @@
 for i in HC22 HH43 HX3 Wm82 ZH13;do
   cat /data/mshe/rloopData/sense_anti_overlap/${i}_IP_sense_ids.txt /data/mshe/rloopData/sense_anti_overlap/${i}_IP_anti_ids.txt | sort -u > /data/mshe/rloopData/sense_anti_overlap/${i}_IP_all_ids.txt
 done
+# 获得改良和驯化基因ID
+awk -F'ID=|;' '{print $2}' /mnt/nfs2/stu_fy/hms/China.landrace_improved.fst.pi.overlap.top5%.gene \
+  | sort -u > /data/mshe/rloopData/China.landrace_improved.top5.IDs.txt  #改良基因
+awk -F'ID=|;' '{print $2}' /mnt/nfs2/stu_fy/hms/China.G.soja_landrace.fst.pi.overlap.top5%.gene \
+  | sort -u > /data/mshe/rloopData/China.G.soja_landrace.top5.IDs.txt   #驯化基因
+mv China.G.soja_landrace.top5.IDs.txt domestication_ids.txt  #改名
+mv China.landrace_improved.top5.IDs.txt improvement_ids.txt
+mkdir dom_imp_rloop
+mv domestication_ids.txt dom_imp_rloop/
+mv improvement_ids.txt dom_imp_rloop/
+
+cd /data/mshe/rloopData
+conda activate chipseeker_r4.3
+# install.packages("VennDiagram")
+vim venn_dom_imp_rloop.R
+args <- commandArgs(trailingOnly = TRUE)
+if (length(args) != 4) {
+  stop("Usage: Rscript venn_dom_imp_rloop.R dom.txt imp.txt rloop.txt out.pdf")
+}
+
+suppressPackageStartupMessages({
+  library(VennDiagram)
+  library(grid)
+})
+
+read_ids <- function(f) unique(trimws(readLines(f, warn = FALSE)))
+
+A <- read_ids(args[1])
+B <- read_ids(args[2])
+C <- read_ids(args[3])
+out_pdf <- args[4]
+
+morandi <- c(
+  Domestication = "#A3B18A",  # 鼠尾草绿
+  Improvement   = "#D4A5A5",  # 灰粉
+  Rloop         = "#9BB7D4"   # 雾霾蓝
+)
+
+pdf(out_pdf, width = 7, height = 7)
+grid.newpage()
+title_text <- sub("\\.pdf$","",basename(out_pdf))
+grid.text(title_text, y = unit(0.98, "npc"), gp = gpar(fontsize = 16, fontface = "bold"))
+
+vp <- venn.diagram(
+  x = list(Domestication = A, Improvement = B, Rloop = C),
+  filename = NULL,
+  euler.d  = FALSE,
+  scaled   = FALSE,             # 交集为0也保持圈重叠
+  fill     = unname(morandi),   # 莫兰迪色
+  alpha    = 0.55,              # 加透明度
+  col      = "black",
+  lwd      = 2,
+  cex      = 1.2,               # 数字大小
+  margin   = 0.1,
+  cat.cex  = 1.3,               # 集合名大小
+  cat.col  = "black"
+)
+grid.draw(vp)
+dev.off()
+message("Wrote: ", out_pdf)
+
+for i in HC22 HH43 HX3 Wm82 ZH13;do
+  Rscript venn_dom_imp_rloop.R dom_imp_rloop/domestication_ids.txt dom_imp_rloop/improvement_ids.txt sense_anti_overlap/${i}_IP_all_ids.txt dom_imp_rloop/${i}_IP_venn.pdf
+done
+
+## 做该基因的deeptools热图
