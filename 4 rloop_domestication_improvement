@@ -1,0 +1,7 @@
+# /mnt/nfs2/stu_fy/hms/China.G.soja_landrace.fst.pi.overlap.top5%.gene 和 /mnt/nfs2/stu_fy/hms/China.landrace_improved.fst.pi.overlap.top5%.gene 驯化和改良相关的基因
+# 需要看一下驯化和改良相关的基因与Rloop 的关系，可以看这些基因和Rloop 相关基因的 overlap 韦恩图，也可以看 这些基因的deeptools 热图   和随机的非驯化基因的 作对照
+
+# 得到个品种的Rloop基因
+for i in HC22 HH43 HX3 Wm82 ZH13;do
+  cat /data/mshe/rloopData/sense_anti_overlap/${i}_IP_sense_ids.txt /data/mshe/rloopData/sense_anti_overlap/${i}_IP_anti_ids.txt | sort -u > /data/mshe/rloopData/sense_anti_overlap/${i}_IP_all_ids.txt
+done
