@@ -71,3 +71,25 @@ for i in HC22 HH43 HX3 Wm82 ZH13;do
 done
 
 ## 做该基因的deeptools热图
+mkdir -p dom_imp_rloop/bed
+ALLBED=/data/mshe/rloopData/annotation/genes_fixed.bed
+# 驯化基因→bed
+grep -F -f dom_imp_rloop/domestication_ids.txt $ALLBED > dom_imp_rloop/bed/domestication_genes.bed
+# 改良基因→bed
+grep -F -f dom_imp_rloop/improvement_ids.txt $ALLBED > dom_imp_rloop/bed/improvement_genes.bed
+# 所有基因组的id
+mkdir -p dom_imp_rloop/random
+cut -f4 $ALLBED | sort -u > dom_imp_rloop/random/all_gene_ids.txt
+# 驯化与改良基因id的合并
+cat dom_imp_rloop/domestication_ids.txt dom_imp_rloop/improvement_ids.txt | sort -u \
+  > dom_imp_rloop/random/dom_imp_ids.txt
+# 非驯化ID池 = 全基因 - (驯化∪改良)
+comm -23 dom_imp_rloop/random/all_gene_ids.txt dom_imp_rloop/random/dom_imp_ids.txt \
+  > dom_imp_rloop/random/non_domimp_ids_pool.txt
+# 抽取随机对照（数量 = 驯化基因数量）
+N=$(wc -l < dom_imp_rloop/domestication_ids.txt)
+shuf -n $N dom_imp_rloop/random/non_domimp_ids_pool.txt \
+  > dom_imp_rloop/random/random_non_domimp_ids.txt
+# 随机对照 -> BED
+grep -F -f dom_imp_rloop/random/random_non_domimp_ids.txt $ALLBED \
+  > dom_imp_rloop/bed/random_non_domimp_genes.bed
