@@ -556,7 +556,7 @@ awk 'BEGIN { OFS="\t" }
 '  "/data/mshe/rloopData/annotation/genes.bed" > "/data/mshe/rloopData/annotation/genes_fixed.bed"
   awk '$6=="+"' "/data/mshe/rloopData/annotation/genes_fixed.bed" > "/data/mshe/rloopData/annotation/genes_plus1.bed"
   awk '$6=="-"' "/data/mshe/rloopData/annotation/genes_fixed.bed" > "/data/mshe/rloopData/annotation/genes_minus1.bed"
-生成基因间区域bed文件
+# 生成基因间区域bed文件
 samtools faidx Gmax_508_v4.0.fa
 cut -f1 "/data/mshe/rloopData/Gmax_508_v4.0.fa.fai" > "/data/mshe/rloopData/chromosome_order.txt"
 # 首先合并所有基因区域（包括sense和antisense）
