@@ -70,9 +70,15 @@ for i in HC22 HH43 HX3 Wm82 ZH13;do
   Rscript venn_dom_imp_rloop.R dom_imp_rloop/domestication_ids.txt dom_imp_rloop/improvement_ids.txt sense_anti_overlap/${i}_IP_all_ids.txt dom_imp_rloop/${i}_IP_venn.pdf
 done
 
+# 将分隔符统一换成tab+排序+去重
+awk 'BEGIN{OFS="\t"} NF>=6 {gsub(/\r$/,""); print $1,$2,$3,$4,$5,$6}' "annotation/genes_fixed.bed" | sort -k1,1 -k2,2n -k3,3n -k4,4 -k5,5n -k6,6 | uniq > "annotation/genes_fixed_sorted.bed"
+LC_ALL=C sort -c -k1,1 -k2,2n -k3,3n /data/mshe/rloopData/annotation/genes_fixed_sorted.bed  # 验证排序是否成功，无输出就行
+awk '$6=="+"' "/data/mshe/rloopData/annotation/genes_fixed_sorted.bed" > "/data/mshe/rloopData/annotation/genes_plus1_sorted.bed"
+awk '$6=="-"' "/data/mshe/rloopData/annotation/genes_fixed_sorted.bed" > "/data/mshe/rloopData/annotation/genes_minus1_sorted.bed"
+
 ## 做该基因的deeptools热图
 mkdir -p dom_imp_rloop/bed
-ALLBED=/data/mshe/rloopData/annotation/genes_fixed.bed
+ALLBED=/data/mshe/rloopData/annotation/genes_fixed_sorted.bed
 # 驯化基因→bed
 grep -F -f dom_imp_rloop/domestication_ids.txt $ALLBED > dom_imp_rloop/bed/domestication_genes.bed
 # 改良基因→bed
@@ -93,10 +99,19 @@ shuf -n $N dom_imp_rloop/random/non_domimp_ids_pool.txt \
 # 随机对照 -> BED
 grep -F -f dom_imp_rloop/random/random_non_domimp_ids.txt $ALLBED \
   > dom_imp_rloop/bed/random_non_domimp_genes.bed
-# 给bed排序与去重
-for f in dom_imp_rloop/bed/*.bed; do
-  base=$(basename "$f" .bed)
-  awk 'BEGIN{OFS="\t"} NF>=3 && $1 !~ /^#/ {gsub(/\r$/,""); print $0}' "$f" \ 
-  | sort -k1,1 -k2,2n | uniq \
-  > "dom_imp_rloop/bed/${base}.sorted.bed" 
+# 抽取20份随机对照
+ALLBED=/data/mshe/rloopData/annotation/genes_fixed_sorted.bed
+POOL=dom_imp_rloop/random/non_domimp_ids_pool.txt
+OUTDIR=dom_imp_rloop/random/repeats
+BEDOUT=dom_imp_rloop/bed/random_repeats
+mkdir -p "$OUTDIR" "$BEDOUT"
+N=$(wc -l < dom_imp_rloop/domestication_ids.txt)
+for i in $(seq -w 01 20); do
+  # 1) 抽一份随机ID
+  shuf -n "$N" "$POOL" > "$OUTDIR/random_${i}.ids"
+  # 2) 转成 BED
+  grep -F -f "$OUTDIR/random_${i}.ids" "$ALLBED" \
+    | sort -k1,1 -k2,2n -k3,3n | uniq \
+    > "$BEDOUT/random_${i}.bed"
+  echo "random_${i}: $(wc -l < "$BEDOUT/random_${i}.bed")"
 done
