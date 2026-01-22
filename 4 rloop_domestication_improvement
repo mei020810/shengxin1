@@ -115,3 +115,190 @@ for i in $(seq -w 01 20); do
     > "$BEDOUT/random_${i}.bed"
   echo "random_${i}: $(wc -l < "$BEDOUT/random_${i}.bed")"
 done
+# 20份随机样的profile
+BW_DIR=/data/mshe/rloopData/bigwigs_RPGC
+VAR=HC22
+TYPE=IP
+BW="${BW_DIR}/${VAR}_${TYPE}_RPGC.bw"   # 先用 full Rloop 
+RANBED_DIR=/data/mshe/rloopData/dom_imp_rloop/bed/random_repeats
+OUT=/data/mshe/rloopData/dom_imp_rloop/deeptools/HC22_random20_TSS 
+mkdir -p "$OUT"
+for i in $(seq -w 01 20); do
+  computeMatrix reference-point \
+    -S "$BW" \
+    -R "${RANBED_DIR}/random_${i}.bed" \
+    --referencePoint TSS -b 2000 -a 2000 \
+    --binSize 50 --missingDataAsZero -p 8 \
+    -o "$OUT/HC22_random_${i}.matrix.gz" 
+
+  plotProfile -m "$OUT/HC22_random_${i}.matrix.gz" -out "$OUT/HC22_random_${i}.profile.pdf" --outFileNameData "$OUT/HC22_random_${i}.profile.tab" 
+done
+# HC22的domestication和improvement的profile
+BW_DIR=/data/mshe/rloopData/bigwigs_RPGC
+BED_DIR=/data/mshe/rloopData/dom_imp_rloop/bed
+BW="${BW_DIR}/HC22_IP_RPGC.bw"
+OUT=/data/mshe/rloopData/dom_imp_rloop/deeptools/HC22_random20_TSS
+computeMatrix reference-point \
+  -S "$BW" \
+  -R "${BED_DIR}/domestication_genes.bed" "${BED_DIR}/improvement_genes.bed" \
+  --referencePoint TSS -b 2000 -a 2000 \
+  --binSize 50 --missingDataAsZero -p 8 \
+  -o "$OUT/HC22_dom_imp.matrix.gz"
+
+plotProfile \
+  -m "$OUT/HC22_dom_imp.matrix.gz" \
+  -out "$OUT/HC22_dom_imp.profile.pdf" \
+  --perGroup \
+  --regionsLabel domestication improvement \
+  --outFileNameData "$OUT/HC22_dom_imp.profile.tab"
+
+vim plot_band_baseR.R
+# plot_band_baseR.R (no tidyverse needed)
+
+dir <- "/data/mshe/rloopData/dom_imp_rloop/deeptools/HC22_random20_TSS"
+rand_files <- list.files(dir, pattern="^HC22_random_[0-9]{2}\\.profile\\.tab$", full.names=TRUE)
+fixed_file <- file.path(dir, "HC22_dom_imp.profile.tab")
+
+if (length(rand_files) < 2) stop("random profile.tab files not found (need >=2).")
+if (!file.exists(fixed_file)) stop("HC22_dom_imp.profile.tab not found. Please generate it with plotProfile --outFileNameData.")
+
+# ---- helper: read deepTools profile.tab (your wide format) ----
+read_dt_profile_wide <- function(f) {
+  x <- readLines(f, warn = FALSE)
+  x <- x[nchar(x) > 0]
+
+  # line2: bins 1..N
+  bins_tok <- strsplit(trimws(x[2]), "\\s+")[[1]]
+  bins <- as.integer(bins_tok[bins_tok != "bins"])
+
+  # line3: sample group v1..vN
+  v <- strsplit(trimws(x[3]), "\\s+")[[1]]
+  sample <- v[1]
+  group <- v[2]
+  vals <- as.numeric(v[3:length(v)])
+
+  if (length(vals) != length(bins)) {
+    stop(sprintf("Length mismatch in %s: bins=%d vals=%d", f, length(bins), length(vals)))
+  }
+  list(bins=bins, sample=sample, group=group, vals=vals)
+}
+
+# ---- 1) random band ----
+rand_list <- lapply(rand_files, read_dt_profile_wide)
+bins <- rand_list[[1]]$bins
+nb <- length(bins)
+# collect random curves into matrix: [nrep x nbins]
+rand_mat <- matrix(NA_real_, nrow=length(rand_list), ncol=nb)
+for (i in seq_along(rand_list)) {
+  if (!all(rand_list[[i]]$bins == bins)) stop("Bins inconsistent across random files.")
+  rand_mat[i, ] <- rand_list[[i]]$vals
+}
+
+rand_mean <- colMeans(rand_mat, na.rm=TRUE)
+rand_lo <- apply(rand_mat, 2, quantile, probs=0.025, na.rm=TRUE, names=FALSE)
+rand_hi <- apply(rand_mat, 2, quantile, probs=0.975, na.rm=TRUE, names=FALSE)
+
+# convert bins to bp axis (TSS ±2000, binSize 50)
+binSize <- 50
+up <- 2000
+pos_bp <- -up + (bins - 0.5) * binSize
+
+# ---- 2) fixed groups (domestication / improvement) ----
+fx <- readLines(fixed_file, warn = FALSE)
+fx <- fx[nchar(fx) > 0]
+
+bins_tok2 <- strsplit(trimws(fx[2]), "\\s+")[[1]]
+bins2 <- as.integer(bins_tok2[bins_tok2 != "bins"])
+if (!all(bins2 == bins)) stop("Bins in HC22_dom_imp.profile.tab differ from random files.")
+
+# from line3 onward: each line = sample group values...
+lines <- fx[3:length(fx)]
+
+# parse all lines
+fixed_sample <- character(0)
+fixed_group <- character(0)
+fixed_vals <- list()
+
+for (ln in lines) {
+  v <- strsplit(trimws(ln), "\\s+")[[1]]
+  if (length(v) < (2 + nb)) next
+  fixed_sample <- c(fixed_sample, v[1])
+  fixed_group  <- c(fixed_group,  v[2])
+  fixed_vals[[length(fixed_vals) + 1]] <- as.numeric(v[3:length(v)])
+}
+if (length(fixed_vals) == 0) stop("No data lines parsed from HC22_dom_imp.profile.tab.")
+
+# If multiple samples exist, pick the first sample (or set target_sample manually)
+target_sample <- fixed_sample[1]
+keep <- fixed_sample == target_sample
+
+fixed_group <- fixed_group[keep]
+fixed_vals <- fixed_vals[keep]
+
+# find domestication / improvement lines
+idx_dom <- which(fixed_group %in% c("domestication","Domestication"))
+idx_imp <- which(fixed_group %in% c("improvement","Improvement"))
+
+if (length(idx_dom) == 0 || length(idx_imp) == 0) {
+  stop("Cannot find domestication/improvement groups in HC22_dom_imp.profile.tab. Check --regionsLabel used in plotProfile.")
+}
+
+dom_curve <- fixed_vals[[idx_dom[1]]]
+imp_curve <- fixed_vals[[idx_imp[1]]]
+
+# ---- 3) plot ----
+out_pdf <- file.path(dir, "HC22_random_band_plus_dom_imp.baseR.pdf")
+pdf(out_pdf, width=7.5, height=4.5)
+
+# y-range to fit everything
+ymin <- min(rand_lo, dom_curve, imp_curve, na.rm=TRUE)
+ymax <- max(rand_hi, dom_curve, imp_curve, na.rm=TRUE)
+
+plot(pos_bp, rand_mean, type="n",
+     xlab="Position relative to TSS (bp)",
+     ylab="RPGC signal",
+     main="HC22 IP R-loop signal around TSS",
+     ylim=c(ymin, ymax))
+# ribbon (random band)
+polygon(c(pos_bp, rev(pos_bp)),
+        c(rand_lo, rev(rand_hi)),
+        border=NA, col=rgb(0, 0, 0, 0.15))
+
+# random mean
+lines(pos_bp, rand_mean, lwd=2)
+
+# dom/imp curves (different linetypes)
+lines(pos_bp, dom_curve, lwd=2, lty=2)
+lines(pos_bp, imp_curve, lwd=2, lty=3)
+
+legend("topright",
+       legend=c("Random mean", "Random 95% band", "Domestication", "Improvement"),
+       lty=c(1, NA, 2, 3),
+       lwd=c(2, NA, 2, 2),
+       pch=c(NA, 15, NA, NA),
+       pt.cex=2,
+       col=c("black", rgb(0,0,0,0.15), "black", "black"),
+       bty="n")
+
+dev.off()
+cat("Saved: ", out_pdf, "\n")
+Rscript plot_band_baseR.R
+# 富集检验
+# 准备全基因id、驯化/改良基因id
+sort -u dom_imp_rloop/random/all_gene_ids.txt > dom_imp_rloop/random/all_gene_ids.u
+sort -u dom_imp_rloop/domestication_ids.txt > dom_imp_rloop/domestication_ids.u
+sort -u dom_imp_rloop/improvement_ids.txt > dom_imp_rloop/improvement_ids.u
+# 准备region bed
+GENE_BED=/data/mshe/rloopData/annotation/genes_fixed_sorted.bed
+TSSBED=dom_imp_rloop/tmp/all_genes_TSS2kb.bed
+mkdir -p dom_imp_rloop/tmp
+awk 'BEGIN{OFS="\t"}
+  NF>=6{
+    chr=$1; start=$2; end=$3; id=$4; score=$5; strand=$6;
+    tss = (strand=="+") ? start : end;
+    s = tss-2000; if(s<0) s=0;
+    e = tss+2000;
+    print chr,s,e,id,score,strand
+  }' "$GENE_BED" \
+| sort -k1,1 -k2,2n -k3,3n | uniq \
+> "$TSSBED"
