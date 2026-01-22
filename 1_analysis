@@ -1,0 +1,118 @@
+
+
+
+SAMPLES=("HH43_1" "HH43_2" "HX3_1" "HX3_2" "Wm82_1" "Wm82_2" "ZH13_1" "ZH13_2")
+BASE=/mnt/nfs2/yfang/mshe/WGBS/winter
+OUT=/data/mshe/dna_methylation/report
+mkdir -p ${OUT}
+# 查看比对率、未必对、多重比对率（Bismark PE_report）
+out=${OUT}/QC_mapping.tsv
+echo -e "sample\ttotal_pairs\tunique_pairs\tmap_eff\tno_align\tmulti_map" > $out
+
+for s in "${SAMPLES[@]}"; do
+  rpt=$(ls ${BASE}/${s}/*_bismark_bt2_PE_report.txt.gz 2>/dev/null | head -n 1)
+  zcat "$rpt" | awk -v S="$s" '
+    /Sequence pairs analysed in total:/ {tot=$NF}
+    /Number of paired-end alignments with a unique best hit:/ {uni=$NF}
+    /Mapping efficiency:/ {eff=$3}
+    /Sequence pairs with no alignments under any condition:/ {noal=$NF}
+    /Sequence pairs did not map uniquely:/ {multi=$NF}
+    END{print S"\t"tot"\t"uni"\t"eff"\t"noal"\t"multi}
+  ' >> $out
+done
+# 查看去重率
+out=${OUT}/QC_dedup.tsv
+echo -e "sample\talignments_in\tdup_removed\tdup_rate\tdedup_left" > $out
+
+for s in "${SAMPLES[@]}"; do
+  rpt=$(ls ${BASE}/${s}/*.deduplication_report.txt.gz 2>/dev/null | head -n 1)
+  zcat "$rpt" | awk -v S="$s" '
+    {
+      # Total number of alignments analysed in ...: 90358282
+      if (match($0, /Total number of alignments analysed[^:]*:[[:space:]]*([0-9]+)/, a)) {
+        n_align = a[1]
+}
+      if (match($0, /Total number duplicated alignments removed:[[:space:]]*([0-9]+)[[:space:]]*\(([0-9.]+)%\)/, a)) {
+        dup_rm  = a[1]
+        dup_rate = a[2]
+}
+      if (match($0, /Total count of deduplicated leftover sequences:[[:space:]]*([0-9]+)/, a)) {
+        dedup_left = a[1] }}
+    END{
+      # 避免空值
+      if (n_align=="") n_align="NA"
+      if (dup_rm=="") dup_rm="NA"
+      if (dup_rate=="") dup_rate="NA"
+      if (dedup_left=="") dedup_left="NA"
+      print S "\t" n_align "\t" dup_rm "\t" dup_rate "\t" dedup_left
+}
+  ' >> $out
+done
+# 全局甲基化水平
+out=${OUT}/QC_global_meth.tsv
+echo -e "sample\tCG_pct\tCHG_pct\tCHH_pct" > $out
+
+for s in "${SAMPLES[@]}"; do
+  rpt=$(ls ${BASE}/${s}/*_bismark_bt2_PE_report.txt.gz 2>/dev/null | head -n 1)
+  zcat "$rpt" | awk -v S="$s" '
+    /C methylated in CpG context:/ {cg=$NF}
+    /C methylated in CHG context:/ {chg=$NF}
+    /C methylated in CHH context:/ {chh=$NF}
+    END{print S"\t"cg"\t"chg"\t"chh}
+  ' >> $out
+done
+
+# 重复一致性检查
+set -euo pipefail
+SAMPLES=(HH43_1 HH43_2 HX3_1 HX3_2 Wm82_1 Wm82_2 ZH13_1 ZH13_2)
+BASE=/mnt/nfs2/yfang/mshe/WGBS/winter
+BW=/data/mshe/dna_methylation/bigwig
+BG=/data/mshe/dna_methylation/bedgraph
+OUT=/data/mshe/dna_methylation/deeptools
+mkdir -p "$BW" "$BG" "$OUT"
+CHROMS=/data/mshe/dna_methylation/Wm82_genome.chrom.sizes
+cut -f1,2 /data/mshe/rloopData/Gmax_508_v4.0.fa.fai > "$CHROMS"
+TYPES=(CG CHG CHH)
+# 1) bedGraph -> bigWig（每个样本、每个 context）
+for type in "${TYPES[@]}"; do
+  for sample in "${SAMPLES[@]}"; do
+    infile="${BASE}/${sample}/${type}.bedgraph.gz"
+    if [[ ! -s "$infile" ]]; then
+      echo "[WARN] missing: $infile"
+      continue
+    fi
+
+    out_bg="${BG}/${sample}_${type}.percent.bedGraph"
+    out_bw="${BW}/${sample}_${type}.percent.bw"
+
+    zcat "$infile" \
+      | awk 'BEGIN{OFS="\t"}{print $1,$2,$3,$4}' \
+      | sort -k1,1 -k2,2n \
+      > "$out_bg"
+
+    bedGraphToBigWig "$out_bg" "$CHROMS" "$out_bw"
+  done
+done
+
+# 2) 8样本总相关性热图 + PCA（每个 context 一套）
+for type in "${TYPES[@]}"; do
+  npz="${OUT}/all_${type}_50kb.npz"
+  tab="${OUT}/all_${type}_50kb.tab"
+  heat="${OUT}/all_${type}_rep_heatmap.pdf"
+  pca="${OUT}/all_${type}_PCA.pdf"
+
+  multiBigwigSummary bins \
+    -b \
+      "${BW}/HH43_1_${type}.percent.bw" "${BW}/HH43_2_${type}.percent.bw" \
+      "${BW}/HX3_1_${type}.percent.bw"  "${BW}/HX3_2_${type}.percent.bw" \
+      "${BW}/Wm82_1_${type}.percent.bw" "${BW}/Wm82_2_${type}.percent.bw" \
+      "${BW}/ZH13_1_${type}.percent.bw" "${BW}/ZH13_2_${type}.percent.bw" \
+    --labels HH43_1 HH43_2 HX3_1 HX3_2 Wm82_1 Wm82_2 ZH13_1 ZH13_2 \
+    --binSize 50000 -p 8 \
+    -o "$npz" --outRawCounts "$tab"
+
+  plotCorrelation -in "$npz" --corMethod spearman --skipZeros \
+    --whatToPlot heatmap -o "$heat"
+
+  plotPCA -in "$npz" -o "$pca"
+done
