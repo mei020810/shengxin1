@@ -63,7 +63,10 @@ for s in "${SAMPLES[@]}"; do
 done
 
 # 重复一致性检查
+vim mainchr_bw_pca.sh
+#!/bin/bash
 set -euo pipefail
+echo "开始时间: $(date)"
 SAMPLES=(HH43_1 HH43_2 HX3_1 HX3_2 Wm82_1 Wm82_2 ZH13_1 ZH13_2)
 BASE=/mnt/nfs2/yfang/mshe/WGBS/winter
 BW=/data/mshe/dna_methylation/bigwig
@@ -82,31 +85,33 @@ for type in "${TYPES[@]}"; do
       continue
     fi
 
-    out_bg="${BG}/${sample}_${type}.percent.bedGraph"
-    out_bw="${BW}/${sample}_${type}.percent.bw"
+    out_bg="${BG}/${sample}_${type}.mainchr.bedGraph"
+    out_bw="${BW}/${sample}_${type}.mainchr.bw"
 
     zcat "$infile" \
+      | awk '$1 ~ /^Gm([0-9]{2}|[0-9])$/' \
       | awk 'BEGIN{OFS="\t"}{print $1,$2,$3,$4}' \
       | sort -k1,1 -k2,2n \
       > "$out_bg"
 
     bedGraphToBigWig "$out_bg" "$CHROMS" "$out_bw"
+    echo "生成：$(basename "$out_bw")"
   done
 done
 
 # 2) 8样本总相关性热图 + PCA（每个 context 一套）
 for type in "${TYPES[@]}"; do
-  npz="${OUT}/all_${type}_50kb.npz"
-  tab="${OUT}/all_${type}_50kb.tab"
-  heat="${OUT}/all_${type}_rep_heatmap.pdf"
-  pca="${OUT}/all_${type}_PCA.pdf"
+  npz="${OUT}/all_${type}_mainchr_50kb.npz"
+  tab="${OUT}/all_${type}_mainchr_50kb.tab"
+  heat="${OUT}/all_${type}_mainchr_rep_heatmap.pdf"
+  pca="${OUT}/all_${type}_mainchr_PCA.pdf"
 
   multiBigwigSummary bins \
     -b \
-      "${BW}/HH43_1_${type}.percent.bw" "${BW}/HH43_2_${type}.percent.bw" \
-      "${BW}/HX3_1_${type}.percent.bw"  "${BW}/HX3_2_${type}.percent.bw" \
-      "${BW}/Wm82_1_${type}.percent.bw" "${BW}/Wm82_2_${type}.percent.bw" \
-      "${BW}/ZH13_1_${type}.percent.bw" "${BW}/ZH13_2_${type}.percent.bw" \
+      "${BW}/HH43_1_${type}.mainchr.bw" "${BW}/HH43_2_${type}.mainchr.bw" \
+      "${BW}/HX3_1_${type}.mainchr.bw"  "${BW}/HX3_2_${type}.mainchr.bw" \
+      "${BW}/Wm82_1_${type}.mainchr.bw" "${BW}/Wm82_2_${type}.mainchr.bw" \
+      "${BW}/ZH13_1_${type}.mainchr.bw" "${BW}/ZH13_2_${type}.mainchr.bw" \
     --labels HH43_1 HH43_2 HX3_1 HX3_2 Wm82_1 Wm82_2 ZH13_1 ZH13_2 \
     --binSize 50000 -p 8 \
     -o "$npz" --outRawCounts "$tab"
@@ -115,4 +120,35 @@ for type in "${TYPES[@]}"; do
     --whatToPlot heatmap -o "$heat"
 
   plotPCA -in "$npz" -o "$pca"
+  echo "完成: ${type} 分析"
 done
+echo "=== 分析完成 ==="
+echo "结束时间: $(date)"
+chmod +x mainchr_bw_pca.sh
+nohup ./mainchr_bw_pca.sh > mainchr_bw_pca.log 2>&1 &
+
+# 看看甲基化在基因和启动子上的分布
+GENES=/data/mshe/rloopData/annotation/genes_fixed_sorted.bed # 基因的bed
+awk '$1 ~ /^Gm([0-9]{2}|[0-9])$/' "$GENES" > genes.mainchr.bed #仅含有染色体的gene bed
+CHROMS=/data/mshe/dna_methylation/Wm82_genome.chrom.sizes
+bedtools flank -i genes.mainchr.bed -g "$CHROMS" -l 2000 -r 200 -s > promoters_2k_200bp.bed # 启动子的bed
+BW=/data/mshe/dna_methylation/bigwig
+computeMatrix scale-regions \
+  -R genes.mainchr.bed \
+  -S \
+    ${BW}/HH43_1_CG.mainchr.bw ${BW}/HH43_2_CG.mainchr.bw \
+    ${BW}/HX3_1_CG.mainchr.bw  ${BW}/HX3_2_CG.mainchr.bw \
+    ${BW}/Wm82_1_CG.mainchr.bw ${BW}/Wm82_2_CG.mainchr.bw \
+    ${BW}/ZH13_1_CG.mainchr.bw ${BW}/ZH13_2_CG.mainchr.bw \
+  --samplesLabel HH43_1 HH43_2 HX3_1 HX3_2 Wm82_1 Wm82_2 ZH13_1 ZH13_2 \
+  --regionBodyLength 3000 \
+  -b 2000 -a 2000 \
+  --binSize 50 \
+  -o matrix_gene_mainchr_CG.gz
+
+plotProfile -m matrix_gene_mainchr_CG.gz \
+  -o gene_CG_mainchr_profile.pdf \
+  --perGroup
+
+plotHeatmap -m matrix_gene_mainchr_CG.gz \
+  -o gene_CG_mainchr_heatmap.pdf
