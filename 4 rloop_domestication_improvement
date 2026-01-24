@@ -302,3 +302,7 @@ awk 'BEGIN{OFS="\t"}
   }' "$GENE_BED" \
 | sort -k1,1 -k2,2n -k3,3n | uniq \
 > "$TSSBED"
+
+PEAK=/data/mshe/rloopData/macs3_results_merge_wcRloop/HC22_IP_x800_bw2_Rloop_nomodel.macs3_peaks.narrowPeak
+POS=dom_imp_rloop/tmp/HC22_IP_RloopPos.ids
+bedtools intersect -a "$TSSBED" -b "$PEAK" -wa -u | cut -f4 | sort -u > "$POS"
