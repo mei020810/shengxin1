@@ -1,0 +1,510 @@
+#从诺禾云盘下载数据：1.下载客户端  wget https://data-deliver.novogene.com/linuxnd.zip 2.解压软件  unzip linuxnd.zip 3.  linuxnd/lnd login -u 用户名 -p 密码 4.查看目录  linuxnd/lnd list 5.数据下载  linuxnd/lnd cp -d oss：//目录名 本地目录
+md5sum -c MD5.txt #检查数据
+#该数据有6个样本：W82大1、W82大2、156大1-156大10、156大3-156大9-156大5、156小1、156小2 后面对应Wm82_big_1、Wm82_big_2、M156_big_1、M156_big_2、M156_small_1、M156_small_2
+#原始数据位置：/mnt/nfs2/stu_fy/hms/Mutant_rnaseq_data
+#参考基因组位置：/mnt/nfs2/stu_fy/hms/RNAseq_Data/Gmax_508_Wm82/
+
+#fastp质控
+conda activate rnaseq
+cd /data/mshe/Mutant_rnadata
+mkdir -p {clean,qc,logs}
+fastp \
+  -i "/mnt/nfs2/stu_fy/hms/Mutant_rnaseq_data/01.RawData/156小2/156小2_1.fq.gz" \
+  -I "/mnt/nfs2/stu_fy/hms/Mutant_rnaseq_data/01.RawData/156小2/156小2_2.fq.gz" \
+  -o clean/M156_small_2_R1.clean.fq.gz \
+  -O clean/M156_small_2_R2.clean.fq.gz \
+  -h qc/M156_small_2.fastp.html \
+  -j qc/M156_small_2.fastp.json \
+  -w 10 \
+  2> logs/M156_small_2.fastp.log #查看该log发现数据质量较好，可直接进行比对，下面将进行批量fastp
+run_fastp () {
+  local old_dir="$1"
+  local old_prefix="$2"
+  local new_prefix="$3"
+
+  # PE自动识别接头；常用过滤阈值：Q20；最多30%低质；最多5个N；最短50bp
+  fastp \
+    -i "/mnt/nfs2/stu_fy/hms/Mutant_rnaseq_data/01.RawData/${old_dir}/${old_prefix}_1.fq.gz" \
+    -I "/mnt/nfs2/stu_fy/hms/Mutant_rnaseq_data/01.RawData/${old_dir}/${old_prefix}_2.fq.gz" \
+    -o "clean/${new_prefix}_R1.clean.fq.gz" \
+    -O "clean/${new_prefix}_R2.clean.fq.gz" \
+    -h "qc/${new_prefix}.fastp.html" \
+    -j "qc/${new_prefix}.fastp.json" \
+    --detect_adapter_for_pe \
+    -q 20 -u 30 -n 5 -l 50 \
+    -w 10 \
+    2> "logs/${new_prefix}.fastp.log"
+}
+
+run_fastp "W82大1" "W82大1" "Wm82_big_1"
+run_fastp "W82大2" "W82大2" "Wm82_big_2"
+run_fastp "156大1-156大10" "156大1-156大10" "M156_big_1"
+run_fastp "156大3-156大9-156大5" "156大3-156大9-156大5" "M156_big_2"
+run_fastp "156小1" "156小1" "M156_small_1"
+run_fastp "156小2" "156小2" "M156_small_2"
+
+#hisat2建立索引、比对
+mkdir -p index bam
+REF_FA="/mnt/nfs2/stu_fy/hms/RNAseq_Data/Gmax_508_Wm82/Gmax_508_v4.0.fa"
+EXON="/mnt/nfs2/stu_fy/hms/RNAseq_Data/Gmax_508_Wm82/Gmax_508_Wm82.a4.v1.exon.txt"
+SS="/mnt/nfs2/stu_fy/hms/RNAseq_Data/Gmax_508_Wm82/Gmax_508_Wm82.a4.v1.ss.txt"
+hisat2-build --exon "$EXON" --ss "$SS" -p 16 "$REF_FA" index/Gmax_508_v4.0.hisat2_index 2> logs/hisat2_build_index.log
+for s in Wm82_big_1 Wm82_big_2 M156_big_1 M156_big_2 M156_small_1 M156_small_2; do
+  echo "[INFO] hisat2: $s"
+
+  hisat2 -p 10 --dta -x index/Gmax_508_v4.0.hisat2_index \
+    -1 "clean/${s}_R1.clean.fq.gz" \
+    -2 "clean/${s}_R2.clean.fq.gz" \
+    2> "logs/${s}.hisat2.log" \
+  | samtools sort -@ 8 -o "bam/${s}.sorted.bam"
+
+  samtools index "bam/${s}.sorted.bam"
+done
+#快速检查每个样本的比对率
+grep "overall alignment rate" -n logs/*.hisat2.log
+
+#featurecount生成矩阵
+#确认链特异性
+mkdir -p count_strand_test
+GTF="/mnt/nfs2/stu_fy/hms/RNAseq_Data/Gmax_508_Wm82/Gmax_508_Wm82.a4.v1.gene.gtf"
+for s in 0 1 2; do
+  featureCounts -T 16 -p -B -C -s $s \
+    -a "$GTF" \
+    -o "count_strand_test/gene_counts.s${s}.txt" \
+    bam/*.sorted.bam \
+    2> "logs/featureCounts.s${s}.log"
+done
+# 对比三种设置的分配率
+grep -H "Successfully assigned" logs/featureCounts.s*.log #此处可见s0的比对率为75-83%，-s1和s2只有37–42%，相差一倍，符合非链特异文库信号
+#生成最终counts矩阵
+mkdir -p count
+GTF="/mnt/nfs2/stu_fy/hms/RNAseq_Data/Gmax_508_Wm82/Gmax_508_Wm82.a4.v1.gene.gtf"
+featureCounts -T 16 -p -B -C -s 0 \
+  -a "$GTF" \
+  -o count/gene_counts.txt \
+  bam/*.sorted.bam \
+  2> logs/featureCounts.log
+#检查整体分配情况
+grep -E "Assigned|Unassigned|Successfully assigned" -n logs/featureCounts.log | head -n 50
+
+#deseq2统计差异表达
+#读取Counts矩阵、整理 count 矩阵、3组做对比、导出 DEG 表
+vim 01_deseq2_fit.R
+rm(list = ls())
+suppressPackageStartupMessages({
+  library(DESeq2)
+})
+
+dir.create("deseq2_out", showWarnings = FALSE)
+
+# 读取数据
+cts <- read.delim("count/gene_counts.txt", comment.char="#", check.names=FALSE)
+rownames(cts) <- cts$Geneid
+count_mat <- as.matrix(cts[, grep("\\.sorted\\.bam$", colnames(cts))])
+storage.mode(count_mat) <- "integer"
+colnames(count_mat) <- sub("\\.sorted\\.bam$", "", basename(colnames(count_mat)))
+
+# 样本分组
+sample_info <- data.frame(
+  sample = colnames(count_mat),
+  group  = factor(c("M156_big","M156_big","M156_small","M156_small","Wm82_big","Wm82_big"),
+                  levels=c("Wm82_big","M156_big","M156_small"))
+)
+stopifnot(all(sample_info$sample == colnames(count_mat)))
+rownames(sample_info) <- sample_info$sample
+write.csv(sample_info, "deseq2_out/sample_info.csv", row.names=FALSE)
+
+# 选取全部基因（默认是>=10，即top500的基因）
+keep <- rowSums(count_mat) > 0
+count_mat <- count_mat[keep, ]
+
+dds <- DESeqDataSetFromMatrix(count_mat, sample_info, design = ~ group)
+dds <- DESeq(dds)
+
+# 保存对象以复用
+saveRDS(dds, file="deseq2_out/dds.rds")
+
+# 保存 VST（可用于pca图）
+vsd <- vst(dds, blind = TRUE)
+saveRDS(vsd, file="deseq2_out/vsd.rds")
+
+# 导出 3 个对比的 DEG 表
+res1 <- results(dds, contrast=c("group","M156_big","Wm82_big"))
+res2 <- results(dds, contrast=c("group","M156_small","Wm82_big"))
+res3 <- results(dds, contrast=c("group","M156_small","M156_big"))
+
+write.csv(as.data.frame(res1[order(res1$padj), ]), "deseq2_out/DEG_M156big_vs_Wm82big.csv")
+write.csv(as.data.frame(res2[order(res2$padj), ]), "deseq2_out/DEG_M156small_vs_Wm82big.csv")
+write.csv(as.data.frame(res3[order(res3$padj), ]), "deseq2_out/DEG_M156small_vs_M156big.csv")
+
+cat("Done: deseq2_out/ (dds.rds, vsd.rds, DEG csv)\n")
+Rscript 01_deseq2_fit.R
+
+vim 02_pca_all_genes.R
+rm(list = ls())
+suppressPackageStartupMessages({
+  library(ggplot2)
+  library(ggrepel)
+  library(DESeq2)  
+})
+
+vsd <- readRDS("deseq2_out/vsd.rds")
+sample_info <- read.csv("deseq2_out/sample_info.csv", stringsAsFactors=FALSE)
+rownames(sample_info) <- sample_info$sample
+
+mat <- assay(vsd)          # 基因 × 样本
+mat_t <- t(mat)            # 样本 × 基因
+
+use_scale <- FALSE
+
+if (use_scale) {
+  mat_t <- mat_t[, apply(mat_t, 2, var) > 0, drop=FALSE]
+}
+
+pc <- prcomp(mat_t, center=TRUE, scale.=use_scale)
+percentVar <- pc$sdev^2 / sum(pc$sdev^2) * 100
+
+pca_df <- data.frame(
+  sample = rownames(pc$x),
+  PC1 = pc$x[,1],
+  PC2 = pc$x[,2]
+)
+pca_df$group <- sample_info[pca_df$sample, "group"]
+
+p <- ggplot(pca_df, aes(PC1, PC2, color=group, label=sample)) +
+  geom_point(size=4) +
+  geom_text_repel(size=3, max.overlaps = Inf) +
+  xlab(sprintf("PC1: %.1f%%", percentVar[1])) +
+  ylab(sprintf("PC2: %.1f%%", percentVar[2])) +
+  theme_bw()
+
+ggsave("deseq2_out/PCA_all_genes.pdf", p, width=10, height=7)
+ggsave("deseq2_out/PCA_all_genes.png", p, width=10, height=7, dpi=300)
+write.csv(pca_df, "deseq2_out/PCA_all_genes_points.csv", row.names=FALSE)
+
+cat("Done: PCA_all_genes.pdf/png\n")
+Rscript 02_pca_all_genes.R
+
+vim 02_pca_mat_f.R
+rm(list = ls())
+suppressPackageStartupMessages({
+  library(ggplot2)
+  library(ggrepel)
+  library(DESeq2)  
+})
+dds <- readRDS("deseq2_out/dds.rds")
+vsd <- readRDS("deseq2_out/vsd.rds")
+sample_info <- read.csv("deseq2_out/sample_info.csv", stringsAsFactors=FALSE)
+rownames(sample_info) <- sample_info$sample
+
+nc <- counts(dds, normalized=TRUE)  # 基因×样本的归一化counts
+keep <- rowSums(nc) >= 10    #去掉极低表达的基因
+mat_f <- assay(vsd)[keep, , drop=FALSE]
+
+pc <- prcomp(t(mat_f), center=TRUE, scale.=FALSE)
+percentVar <- pc$sdev^2 / sum(pc$sdev^2) * 100
+
+pca_df <- data.frame(
+  sample = rownames(pc$x),
+  PC1 = pc$x[,1],
+  PC2 = pc$x[,2]
+)
+pca_df$group <- sample_info[pca_df$sample, "group"]
+
+p <- ggplot(pca_df, aes(PC1, PC2, color=group, label=sample)) +
+  geom_point(size=4) +
+  geom_text_repel(size=3, max.overlaps = Inf) +
+  xlab(sprintf("PC1: %.1f%%", percentVar[1])) +
+  ylab(sprintf("PC2: %.1f%%", percentVar[2])) +
+  theme_bw()
+
+ggsave("deseq2_out/PCA_mat_f.pdf", p, width=10, height=7)
+ggsave("deseq2_out/PCA_mat_f.png", p, width=10, height=7, dpi=300)
+write.csv(pca_df, "deseq2_out/PCA_mat_f_points.csv", row.names=FALSE)
+
+cat("Done: PCA_mat_f.pdf/png\n")
+Rscript 02_pca_mat_f.R
+
+vim 03_sample_correlation_pheatmap.R
+suppressPackageStartupMessages({
+  library(DESeq2)
+  library(pheatmap)
+})
+
+vsd <- readRDS("deseq2_out/vsd.rds")
+mat <- assay(vsd)
+
+# Pearson 相关性
+cor_mat <- cor(mat, method = "pearson")
+write.csv(cor_mat, file = "deseq2_out/sample_correlation_pearson.csv")
+
+# 距离矩阵：1 - 相关性（用于聚类）
+dist_mat <- as.dist(1 - cor_mat)
+
+pdf("deseq2_out/sample_correlation_pheatmap.pdf", width = 7, height = 6)
+pheatmap(
+  cor_mat,
+  clustering_distance_rows = dist_mat,
+  clustering_distance_cols = dist_mat,
+  clustering_method = "complete",
+  display_numbers = TRUE,
+  number_format = "%.2f",
+  border_color = NA
+)
+dev.off()
+
+cat("Done: deseq2_out/sample_correlation_pheatmap.pdf\n")
+Rscript 03_sample_correlation_pheatmap.R
+
+
+
+vim 05_split_up_down.R
+rm(list=ls())
+
+padj_cut <- 0.05
+lfc_cut  <- 1
+
+dir.create("deseq2_out", showWarnings = FALSE)
+
+comparisons <- list(
+  M156big_vs_Wm82big    = "deseq2_out/DEG_M156big_vs_Wm82big.csv",
+  M156small_vs_Wm82big  = "deseq2_out/DEG_M156small_vs_Wm82big.csv",
+  M156small_vs_M156big  = "deseq2_out/DEG_M156small_vs_M156big.csv"
+)
+
+summary_list <- list()
+
+for (cmp in names(comparisons)) {
+  infile <- comparisons[[cmp]]
+  if (!file.exists(infile)) {
+    cat("[WARN] missing:", infile, "\n")
+    next
+  }
+
+  res <- read.csv(infile, row.names = 1, check.names = FALSE)
+
+  # 处理 NA
+  if (!("padj" %in% colnames(res)) || !("log2FoldChange" %in% colnames(res))) {
+    stop("File missing padj or log2FoldChange: ", infile)
+  }
+  res$padj[is.na(res$padj)] <- 1
+  res$log2FoldChange[is.na(res$log2FoldChange)] <- 0
+
+  sig <- res[res$padj < padj_cut & abs(res$log2FoldChange) >= lfc_cut, , drop=FALSE]
+  up   <- sig[sig$log2FoldChange > 0, , drop=FALSE]
+  down <- sig[sig$log2FoldChange < 0, , drop=FALSE]
+
+  # 输出完整表
+  write.csv(up,   file = sprintf("deseq2_out/Up_%s_padj%.2g_lfc%d.csv",   cmp, padj_cut, lfc_cut))
+  write.csv(down, file = sprintf("deseq2_out/Down_%s_padj%.2g_lfc%d.csv", cmp, padj_cut, lfc_cut))
+
+  # 输出基因ID列表（用于GO/KEGG）
+  write.table(rownames(up),
+              file = sprintf("deseq2_out/Up_%s_padj%.2g_lfc%d.genes.txt", cmp, padj_cut, lfc_cut),
+              quote = FALSE, row.names = FALSE, col.names = FALSE)
+  write.table(rownames(down),
+              file = sprintf("deseq2_out/Down_%s_padj%.2g_lfc%d.genes.txt", cmp, padj_cut, lfc_cut),
+              quote = FALSE, row.names = FALSE, col.names = FALSE)
+
+  # 汇总统计
+  summary_list[[cmp]] <- data.frame(
+    comparison = cmp,
+    total_genes = nrow(res),
+    sig_genes   = nrow(sig),
+    up_genes    = nrow(up),
+    down_genes  = nrow(down)
+  )
+
+  cat("[OK]", cmp, "sig:", nrow(sig), "up:", nrow(up), "down:", nrow(down), "\n")
+}
+
+summary_df <- do.call(rbind, summary_list)
+write.csv(summary_df, "deseq2_out/DEG_up_down_summary_padj0.05_lfc1.csv", row.names = FALSE)
+cat("Done: deseq2_out/DEG_up_down_summary_padj0.05_lfc1.csv\n")
+Rscript 05_split_up_down.R
+
+vim make_qc_deg_table.py
+#!/usr/bin/env python3
+import re
+import os
+import glob
+import csv
+
+PADJ_CUT = 0.05
+LFC_CUT = 1.0
+
+def read_text(path):
+    with open(path, "r", encoding="utf-8", errors="ignore") as f:
+        return f.read()
+
+def parse_fastp_log(path):
+    """
+    Return dict: clean_pairs (Read1 after filtering total reads), dup_rate, insert_size
+    """
+    txt = read_text(path)
+
+    m = re.search(r"Read1 after filtering:\s*?\n.*?total reads:\s*(\d+)", txt, re.S)
+    clean_pairs = int(m.group(1)) if m else None
+
+    m = re.search(r"Duplication rate:\s*([\d\.]+)%", txt)
+    dup_rate = float(m.group(1)) if m else None
+
+    m = re.search(r"Insert size peak.*?:\s*(\d+)", txt)
+    insert_size = int(m.group(1)) if m else None
+
+    return {"clean_pairs": clean_pairs, "dup_rate": dup_rate, "insert_size": insert_size}
+
+def parse_hisat2_log(path):
+    """
+    Return dict: mapping_ratio, concord_exact1, concord_gt1, concord_total
+    """
+    txt = read_text(path)
+
+    m = re.search(r"([\d\.]+)%\s+overall alignment rate", txt)
+    mapping_ratio = float(m.group(1)) if m else None
+
+    m1 = re.search(r"(\d+)\s+\([\d\.]+%\)\s+aligned concordantly exactly 1 time", txt)
+    exact1 = int(m1.group(1)) if m1 else 0
+
+    m2 = re.search(r"(\d+)\s+\([\d\.]+%\)\s+aligned concordantly >1 times", txt)
+    gt1 = int(m2.group(1)) if m2 else 0
+
+    concord_total = exact1 + gt1
+    return {"mapping_ratio": mapping_ratio, "concord_total": concord_total}
+
+def parse_deg_csv(path):
+    """
+    Return dict: sig/up/down using PADJ_CUT & |LFC|>=LFC_CUT
+    """
+    # DESeq2 csv: rownames are gene IDs; columns include log2FoldChange, padj
+    sig = up = down = 0
+    with open(path, "r", encoding="utf-8", errors="ignore") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            try:
+                lfc = float(row.get("log2FoldChange", "nan"))
+            except:
+                continue
+            padj_str = row.get("padj", "")
+            try:
+                padj = float(padj_str) if padj_str not in ("", "NA", "NaN", None) else 1.0
+            except:
+                padj = 1.0
+
+            if padj < PADJ_CUT and abs(lfc) >= LFC_CUT:
+                sig += 1
+                if lfc > 0:
+                    up += 1
+                elif lfc < 0:
+                    down += 1
+    return {"sig": sig, "up": up, "down": down}
+
+def main():
+    logs_dir = "logs"
+    deg_dir = "deseq2_out"
+    out_xlsx = "Mutant_RNAseq_QC_DEG.xlsx"
+    out_qc_csv = "Mapping_QC.csv"
+    out_deg_csv = "DEG_summary.csv"
+
+    # -------- Mapping/QC table (per sample) --------
+    fastp_logs = {os.path.basename(p).replace(".fastp.log",""): p
+                  for p in glob.glob(os.path.join(logs_dir, "*.fastp.log"))}
+    hisat2_logs = {os.path.basename(p).replace(".hisat2.log",""): p
+                   for p in glob.glob(os.path.join(logs_dir, "*.hisat2.log"))}
+
+    samples = sorted(set(fastp_logs.keys()) & set(hisat2_logs.keys()))
+    qc_rows = []
+    for s in samples:
+        fp = parse_fastp_log(fastp_logs[s])
+        hs = parse_hisat2_log(hisat2_logs[s])
+
+        clean_pairs = fp["clean_pairs"]
+        concord = hs["concord_total"]
+        concord_ratio = (concord / clean_pairs * 100.0) if (clean_pairs and concord) else None
+
+        qc_rows.append({
+            "Sample": s,
+            "Clean_data_pairs": clean_pairs,
+            "Mapping_ratio_%": hs["mapping_ratio"],
+            "Aligned_concordantly_pairs": concord,
+            "Concordantly_ratio_%": round(concord_ratio, 2) if concord_ratio is not None else None,
+            "Duplication_rate_%": fp["dup_rate"],
+            "Insert_size_peak": fp["insert_size"],
+        })
+
+    # write QC csv
+    with open(out_qc_csv, "w", newline="", encoding="utf-8") as f:
+        w = csv.DictWriter(f, fieldnames=list(qc_rows[0].keys()) if qc_rows else [])
+        w.writeheader()
+        for r in qc_rows:
+            w.writerow(r)
+
+    # -------- DEG summary table (per comparison) --------
+    deg_files = sorted(glob.glob(os.path.join(deg_dir, "DEG_*.csv")))
+    deg_rows = []
+    for p in deg_files:
+        name = os.path.basename(p).replace("DEG_", "").replace(".csv", "")
+        stat = parse_deg_csv(p)
+        deg_rows.append({
+            "Comparison": name,
+            "padj_cut": PADJ_CUT,
+            "abs_log2FC_cut": LFC_CUT,
+            "Sig_genes": stat["sig"],
+            "Up_genes": stat["up"],
+            "Down_genes": stat["down"],
+        })
+
+    with open(out_deg_csv, "w", newline="", encoding="utf-8") as f:
+        w = csv.DictWriter(f, fieldnames=list(deg_rows[0].keys()) if deg_rows else [])
+        w.writeheader()
+        for r in deg_rows:
+            w.writerow(r)
+
+    # -------- optional: write xlsx (2 sheets) --------
+    try:
+        from openpyxl import Workbook
+        from openpyxl.utils import get_column_letter
+        from openpyxl.styles import Font, Alignment
+
+        wb = Workbook()
+        wb.remove(wb.active)
+
+        def add_sheet(title, rows):
+            ws = wb.create_sheet(title)
+            if not rows:
+                return
+            headers = list(rows[0].keys())
+            ws.append(headers)
+            for r in rows:
+                ws.append([r.get(h) for h in headers])
+
+            # style
+            bold = Font(bold=True)
+            for c in range(1, len(headers)+1):
+                ws.cell(row=1, column=c).font = bold
+                ws.cell(row=1, column=c).alignment = Alignment(horizontal="center")
+
+            ws.freeze_panes = "A2"
+            # auto width (rough)
+            for c, h in enumerate(headers, start=1):
+                maxlen = max(len(str(h)), max(len(str(ws.cell(row=r, column=c).value or "")) for r in range(2, ws.max_row+1)))
+                ws.column_dimensions[get_column_letter(c)].width = min(maxlen + 2, 40)
+
+        add_sheet("Mapping_QC", qc_rows)
+        add_sheet("DEG_summary", deg_rows)
+        wb.save(out_xlsx)
+        print(f"[OK] Wrote {out_xlsx} (and {out_qc_csv}, {out_deg_csv})")
+    except Exception as e:
+        print(f"[WARN] openpyxl not available or failed ({e}). Wrote CSV only: {out_qc_csv}, {out_deg_csv}")
+
+if __name__ == "__main__":
+    main()
+python3 make_qc_deg_table.py
+
+### GO和KEGG注释表从https://venyao.xyz/soybeangdb/此网址拿
+#
+sed 's/\.Wm82\.a4\.v1$//' deseq2_out/Up_M156small_vs_Wm82big_padj0.05_lfc1.genes.txt \
+  > deseq2_out/Up_M156small_vs_Wm82big.cleanedID.txt
+
+
+                                              
