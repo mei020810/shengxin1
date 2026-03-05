@@ -501,10 +501,484 @@ if __name__ == "__main__":
     main()
 python3 make_qc_deg_table.py
 
-### GO和KEGG注释表从https://venyao.xyz/soybeangdb/此网址拿
-#
+## GO和KEGG注释表从https://venyao.xyz/soybeangdb/此网址拿
+#清理列名
 sed 's/\.Wm82\.a4\.v1$//' deseq2_out/Up_M156small_vs_Wm82big_padj0.05_lfc1.genes.txt \
   > deseq2_out/Up_M156small_vs_Wm82big.cleanedID.txt
+sed 's/\.Wm82\.a4\.v1$//' deseq2_out/Up_M156big_vs_Wm82big_padj0.05_lfc1.genes.txt \
+  > deseq2_out/Up_M156big_vs_Wm82big.cleanedID.txt
+sed 's/\.Wm82\.a4\.v1$//' deseq2_out/Up_M156small_vs_M156big_padj0.05_lfc1.genes.txt \
+  > deseq2_out/Up_M156small_vs_M156big.cleanedID.txt
+sed 's/\.Wm82\.a4\.v1$//' deseq2_out/Down_M156small_vs_Wm82big_padj0.05_lfc1.genes.txt \
+  > deseq2_out/Down_M156small_vs_Wm82big.cleanedID.txt
+sed 's/\.Wm82\.a4\.v1$//' deseq2_out/Down_M156big_vs_Wm82big_padj0.05_lfc1.genes.txt \
+  > deseq2_out/Down_M156big_vs_Wm82big.cleanedID.txt
+sed 's/\.Wm82\.a4\.v1$//' deseq2_out/Down_M156small_vs_M156big_padj0.05_lfc1.genes.txt \
+  > deseq2_out/Down_M156small_vs_M156big.cleanedID.txt
+
+conda activate rnaseq_r
+vim 06_enrich_GO_KEGG.R
+rm(list=ls())
+suppressPackageStartupMessages({
+  library(clusterProfiler)
+  library(enrichplot)
+  library(dplyr)
+  library(readr)
+  library(ggplot2)
+})
+
+go_file   <- "/mnt/nfs2/stu_fy/hms/GO_KEGG_annotation/Williams_82.GO.txt"
+kegg_file <- "/mnt/nfs2/stu_fy/hms/GO_KEGG_annotation/Williams_82.KEGG.txt"
+dds_rds   <- "deseq2_out/dds.rds"
+genes_dir <- "deseq2_out"
+outdir    <- "enrich_out"
+dir.create(outdir, showWarnings=FALSE)
+
+clean_id <- function(x) sub("\\.Wm82\\.a4\\.v1$", "", x)
+dds <- readRDS(dds_rds)
+bg_all <- clean_id(rownames(dds))
+
+# ===================== GO =====================
+go_raw <- read.delim(go_file, sep="\t", header=TRUE, stringsAsFactors=FALSE, check.names=FALSE)
+
+# Level -> ontology
+go_raw$Ontology <- dplyr::case_when(
+  go_raw$Level %in% c("Biological Process","biological process") ~ "BP",
+  go_raw$Level %in% c("Cellular Component","cellular component") ~ "CC",
+  go_raw$Level %in% c("Molecular Function","molecular function") ~ "MF",
+  TRUE ~ NA_character_
+)
+
+go_term2gene <- go_raw %>%
+  dplyr::select(term = GO, gene = Gene) %>%
+  filter(!is.na(term), term!="", !is.na(gene), gene!="") %>%
+  distinct()
+
+go_term2name <- go_raw %>%
+  dplyr::select(term = GO, name = Description, ontology = Ontology) %>%
+  filter(!is.na(term), term!="") %>%
+  distinct()
+
+bg_go <- intersect(bg_all, unique(go_term2gene$gene))
+
+# ===================== KEGG (Pathway) =====================
+k_raw <- read.delim(kegg_file, sep="\t", header=TRUE, stringsAsFactors=FALSE, check.names=FALSE)
+
+kegg_pw_term2gene <- k_raw %>%
+  dplyr::select(term = Pathway, gene = Gene) %>%
+  filter(!is.na(term), term!="", !is.na(gene), gene!="") %>%
+  distinct()
+
+kegg_pw_term2name <- k_raw %>%
+  dplyr::select(term = Pathway, name = Description) %>%
+  filter(!is.na(term), term!="") %>%
+  distinct()
+
+bg_kegg_pw <- intersect(bg_all, unique(kegg_pw_term2gene$gene))
+
+# ======= (可选) KEGG KO 富集：想跑KO就打开 =======
+do_kegg_ko <- FALSE
+if (do_kegg_ko) {
+  kegg_ko_term2gene <- k_raw %>%
+    dplyr::select(term = KO, gene = Gene) %>%
+    filter(!is.na(term), term!="", !is.na(gene), gene!="") %>%
+    distinct()
+  kegg_ko_term2name <- k_raw %>%
+    dplyr::select(term = KO, name = KO) %>%
+    filter(!is.na(term), term!="") %>%
+    distinct()
+  bg_kegg_ko <- intersect(bg_all, unique(kegg_ko_term2gene$gene))
+}
+
+# ===================== enrichment runner =====================
+run_enrich <- function(genes, universe, term2gene, term2name, prefix, subdir){
+  od <- file.path(outdir, subdir)
+  dir.create(od, showWarnings=FALSE, recursive=TRUE)
+
+  genes <- unique(genes)
+  genes <- intersect(genes, universe)
+
+  if (length(genes) < 5) {
+    message("[SKIP] ", prefix, " genes < 5 after intersect universe")
+    return(NULL)
+  }
+
+  eg <- enricher(
+    gene          = genes,
+    universe      = universe,
+    TERM2GENE     = term2gene,
+    TERM2NAME     = term2name,
+    pAdjustMethod = "BH",
+    pvalueCutoff  = 0.05,
+    qvalueCutoff  = 0.05,
+    minGSSize     = 10,
+    maxGSSize     = 500
+  )
+
+  if (is.null(eg) || nrow(as.data.frame(eg))==0) {
+    message("[EMPTY] ", prefix)
+    return(NULL)
+  }
+
+  res <- as.data.frame(eg)
+  write.csv(res, file.path(od, paste0(prefix, ".enrich.csv")), row.names=FALSE)
+
+  pdf(file.path(od, paste0(prefix, ".dotplot.pdf")), width=9, height=6)
+  print(dotplot(eg, showCategory=10))
+  dev.off()
+
+  pdf(file.path(od, paste0(prefix, ".barplot.pdf")), width=9, height=6)
+  print(barplot(eg, showCategory=10))
+  dev.off()
+
+  return(eg)
+}
+
+# ===================== loop gene lists =====================
+gene_files <- list.files(genes_dir, pattern="\\.cleanedID\\.txt$", full.names=TRUE)
+if (length(gene_files)==0) stop("No *.genes.txt found in deseq2_out/ (Up/Down gene lists)")
+
+for (f in gene_files) {
+  set_name <- sub("\\.cleanedID\\.txt$", "", basename(f))
+  genes <- clean_id(readLines(f))
+  genes <- genes[genes!=""]
+
+  message("== ", set_name, " (n=", length(genes), ") ==")
+
+  # -------- GO (overall) --------
+  eg_go <- run_enrich(
+    genes     = genes,
+    universe  = bg_go,
+    term2gene = go_term2gene,
+    term2name = go_term2name %>% dplyr::select(term, name),
+    prefix    = set_name,
+    subdir    = "GO"
+  )
+
+  # -------- GO split BP/CC/MF (基于表里的Level) --------
+  if (!is.null(eg_go)) {
+    go_res <- as.data.frame(eg_go) %>%
+      left_join(go_term2name, by=c("ID"="term"))
+    write.csv(go_res, file.path(outdir, "GO", paste0(set_name, ".with_ontology.csv")), row.names=FALSE)
+
+    for (ont in c("BP","CC","MF")) {
+      sub <- go_res %>% filter(ontology==ont)
+      if (nrow(sub)==0) next
+      write.csv(sub, file.path(outdir, "GO", paste0(set_name, ".", ont, ".csv")), row.names=FALSE)
+    }
+  }
+
+  # -------- KEGG Pathway --------
+  run_enrich(
+    genes     = genes,
+    universe  = bg_kegg_pw,
+    term2gene = kegg_pw_term2gene,
+    term2name = kegg_pw_term2name,
+    prefix    = set_name,
+    subdir    = "KEGG_Pathway"
+  )
+
+  # -------- (可选) KEGG KO --------
+  if (do_kegg_ko) {
+    run_enrich(
+      genes     = genes,
+      universe  = bg_kegg_ko,
+      term2gene = kegg_ko_term2gene,
+      term2name = kegg_ko_term2name,
+      prefix    = set_name,
+      subdir    = "KEGG_KO"
+    )
+  }
+}
+message("Done. Results in enrich_out/")
+
+Rscript 06_enrich_GO_KEGG.R
+
+vim 06_1_go_facet_dotplot.R
+rm(list=ls())
+suppressPackageStartupMessages({
+  library(dplyr)
+  library(ggplot2)
+})
+
+# ========= 参数区 =========
+in_dir  <- "enrich_out/GO"
+out_dir <- file.path(in_dir, "facet_plots")
+dir.create(out_dir, showWarnings = FALSE, recursive = TRUE)
+
+topN <- 10
+use_p_adjust_for_color <- FALSE   # TRUE: -log10(p.adjust)；FALSE: -log10(pvalue)
+export_png <- TRUE
+exclude_obsolete <- FALSE
+
+# 字体大小/加粗
+base_size <- 15
+axis_text_size <- 11
+strip_text_size <- 12
+title_size <- 16
+
+# 颜色：低蓝高红
+low_col  <- "blue"
+high_col <- "red"
+
+# ========= 工具函数 =========
+parse_ratio <- function(x) {
+  sp <- strsplit(as.character(x), "/", fixed = TRUE)
+  vapply(sp, function(z) as.numeric(z[1]) / as.numeric(z[2]), numeric(1))
+}
+clean_y_labels <- function(x) sub("\\|\\|.*$", "", x)
+
+make_plot_one <- function(infile, outpdf, plot_title) {
+  df <- read.csv(infile, check.names = FALSE)
+
+  need_cols <- c("ID","Description","GeneRatio","Count","pvalue","p.adjust","ontology")
+  miss <- setdiff(need_cols, colnames(df))
+  if (length(miss) > 0) {
+    message("[SKIP] missing cols: ", paste(miss, collapse=","), " in ", infile)
+    return(invisible(FALSE))
+  }
+
+  df$GeneRatio_num <- parse_ratio(df$GeneRatio)
+  score <- if (use_p_adjust_for_color) df$p.adjust else df$pvalue
+  df$neglog10 <- -log10(score + 1e-300)
+
+  df2 <- df %>%
+    filter(ontology %in% c("BP","CC","MF")) %>%
+    filter(!is.na(Description), Description != "") %>%
+    { if (exclude_obsolete) filter(., !grepl("obsolete", Description, ignore.case = TRUE)) else . } %>%
+    group_by(ontology) %>%
+    arrange(p.adjust, pvalue) %>%   # 每个本体内按显著性取TopN
+    slice_head(n = topN) %>%
+    ungroup()
+
+  if (nrow(df2) == 0) {
+    message("[EMPTY] ", basename(infile))
+    return(invisible(FALSE))
+  }
+
+  # facet标签换成全称
+  df2$ontology <- factor(
+    df2$ontology,
+    levels = c("BP","CC","MF"),
+    labels = c("Biological Process","Cellular Component","Molecular Function")
+  )
+
+  # 每个分面内部排序（这里按GeneRatio；也可改成按neglog10）
+  df2 <- df2 %>%
+    group_by(ontology) %>%
+    arrange(GeneRatio_num, .by_group = TRUE) %>%
+    mutate(term_facet = paste0(Description, "||", ontology)) %>%
+    ungroup()
+
+  df2$term_facet <- factor(df2$term_facet, levels = df2$term_facet)
+
+  p <- ggplot(df2, aes(x = GeneRatio_num, y = term_facet)) +
+    geom_point(aes(size = Count, color = neglog10)) +
+    scale_color_gradient(low = low_col, high = high_col) +
+    facet_grid(ontology ~ ., scales = "free_y", space = "free_y") +
+    scale_y_discrete(labels = clean_y_labels) +
+    labs(
+      title = plot_title,
+      x = "Gene Ratio",
+      y = "GO Terms",
+      color = if (use_p_adjust_for_color) "-log10(p.adjust)" else "-log10(pvalue)",
+      size  = "Gene Count"
+    ) +
+    theme_bw(base_size = base_size) +
+    theme(
+      plot.title = element_text(hjust = 0.5, size = title_size, face = "bold"),
+      axis.title = element_text(size = base_size, face = "bold"),
+      axis.text  = element_text(size = axis_text_size, face = "bold"),
+      strip.text.y = element_text(angle = 90, size = strip_text_size, face = "bold"),
+      legend.title = element_text(face = "bold"),
+      legend.text  = element_text(face = "bold")
+    )
+
+  ggsave(outpdf, p, width = 9, height = 10)
+
+  if (export_png) {
+    outpng <- sub("\\.pdf$", ".png", outpdf)
+    ggsave(outpng, p, width = 9, height = 10, dpi = 300)
+  }
+
+  invisible(TRUE)
+}
+
+# ========= 批量处理 =========
+files <- list.files(in_dir, pattern = "\\.with_ontology\\.csv$", full.names = TRUE)
+if (length(files) == 0) stop("No *.with_ontology.csv found in ", in_dir)
+
+ok <- 0
+for (f in files) {
+  base <- sub("\\.with_ontology\\.csv$", "", basename(f))
+  outpdf <- file.path(out_dir, paste0(base, ".BPCCMF_top", topN, ".pdf"))
+  message("[PLOT] ", base)
+  if (make_plot_one(f, outpdf, plot_title = base)) ok <- ok + 1
+}
+message("Done. Plotted ", ok, " files. Output: ", out_dir)
+Rscript 06_1_go_facet_dotplot.R
 
 
-                                              
+vim 06_export_expr_with_DEGflags.R
+rm(list=ls())
+suppressPackageStartupMessages({
+  library(DESeq2)
+})
+
+# ===== 参数 =====
+dds_rds <- "deseq2_out/dds.rds"
+out_csv <- "deseq2_out/Expr_normcounts_with_DEGflags.csv"
+
+padj_cut <- 0.05
+lfc_cut  <- 1
+
+# 清理ID用的后缀
+clean_id <- function(x) sub("\\.Wm82\\.a4\\.v1$", "", x)
+
+# ===== 读取dds，导出表达量 =====
+dds <- readRDS(dds_rds)
+
+raw_counts  <- counts(dds, normalized = FALSE)
+norm_counts <- counts(dds, normalized = TRUE)
+
+gene_id <- rownames(dds)
+
+# 给表达量列加前缀，避免混淆
+raw_df  <- as.data.frame(raw_counts)
+colnames(raw_df) <- paste0("raw_", colnames(raw_df))
+
+norm_df <- as.data.frame(norm_counts)
+colnames(norm_df) <- paste0("norm_", colnames(norm_df))
+
+out <- data.frame(
+  Gene = gene_id,
+  Gene_clean = clean_id(gene_id),
+  raw_df,
+  norm_df,
+  stringsAsFactors = FALSE,
+  check.names = FALSE
+)
+
+# ===== 定义要做的对比=====
+comparisons <- list(
+  M156big_vs_Wm82big    = c("M156_big",   "Wm82_big"),
+  M156small_vs_Wm82big  = c("M156_small", "Wm82_big"),
+  M156small_vs_M156big  = c("M156_small", "M156_big")
+)
+
+# ===== 把每个对比的统计量 + DEG标注 合并进总表 =====
+for (cmp in names(comparisons)) {
+  A <- comparisons[[cmp]][1]
+  B <- comparisons[[cmp]][2]
+
+  res <- results(dds, contrast = c("group", A, B))
+  res_df <- as.data.frame(res)
+  res_df$Gene <- rownames(res_df)
+
+  # 处理NA
+  res_df$padj[is.na(res_df$padj)] <- 1
+  res_df$log2FoldChange[is.na(res_df$log2FoldChange)] <- 0
+  res_df$pvalue[is.na(res_df$pvalue)] <- 1
+
+  # DEG 标注
+  res_df[[paste0(cmp, "_DEG")]] <- (res_df$padj < padj_cut & abs(res_df$log2FoldChange) >= lfc_cut)
+  res_df[[paste0(cmp, "_Direction")]] <- ifelse(
+    res_df[[paste0(cmp, "_DEG")]] & res_df$log2FoldChange > 0, "Up",
+    ifelse(res_df[[paste0(cmp, "_DEG")]] & res_df$log2FoldChange < 0, "Down", "NS")
+  )
+
+  # 只保留需要的列，并加前缀避免冲突
+  keep_cols <- c("Gene", "baseMean", "log2FoldChange", "lfcSE", "stat", "pvalue", "padj",
+                 paste0(cmp, "_DEG"), paste0(cmp, "_Direction"))
+  res_df <- res_df[, keep_cols, drop=FALSE]
+
+  # 给统计列加对比名前缀
+  colnames(res_df) <- ifelse(
+    colnames(res_df) == "Gene" | grepl(paste0("^", cmp, "_"), colnames(res_df)),
+    colnames(res_df),
+    paste0(cmp, "_", colnames(res_df))
+  )
+
+  out <- merge(out, res_df, by = "Gene", all.x = TRUE, sort = FALSE)
+}
+
+write.csv(out, out_csv, row.names = FALSE)
+cat("Done:", out_csv, "\n")
+Rscript 06_export_expr_with_DEGflags.R
+
+
+vim 07_add_TPM_FPKM_to_expr_table.R
+rm(list=ls())
+suppressPackageStartupMessages({
+  library(DESeq2)
+  library(GenomicFeatures)
+  library(rtracklayer)
+  library(data.table)
+})
+
+# ===== 参数 =====
+gtf_file <- "/mnt/nfs2/stu_fy/hms/RNAseq_Data/Gmax_508_Wm82/Gmax_508_Wm82.a4.v1.gene.gtf"
+dds_rds  <- "deseq2_out/dds.rds"
+
+in_expr_csv  <- "deseq2_out/Expr_normcounts_with_DEGflags.csv"
+out_expr_csv <- "deseq2_out/Expr_normcounts_TPM_FPKM_with_DEGflags.csv"
+
+# 你去后缀用的规则
+clean_id <- function(x) sub("\\.Wm82\\.a4\\.v1$", "", x)
+
+# ===== 读取 dds 和 raw counts =====
+dds <- readRDS(dds_rds)
+cts <- counts(dds, normalized = FALSE)   # raw fragment counts
+gene_raw <- rownames(cts)
+gene_clean <- clean_id(gene_raw)
+
+# ===== 从 GTF 计算每个 gene 的 exon union length（bp）=====
+message("[INFO] Building TxDb from GTF (may take a bit)...")
+txdb <- makeTxDbFromGFF(gtf_file, format="gtf")
+
+ex_by_gene <- exonsBy(txdb, by="gene")
+# exon并集长度：reduce后求和
+gene_len_bp <- sapply(ex_by_gene, function(gr) sum(width(reduce(gr))))
+len_dt <- data.table(
+  Gene_gtf = names(gene_len_bp),
+  Gene_clean = clean_id(names(gene_len_bp)),
+  exon_len_bp = as.numeric(gene_len_bp)
+)
+# 如果clean后出现重复，取最大长度
+len_dt <- len_dt[, .(exon_len_bp = max(exon_len_bp, na.rm=TRUE)), by=Gene_clean]
+
+# 对齐到counts矩阵顺序
+len_map <- len_dt$exon_len_bp[match(gene_clean, len_dt$Gene_clean)]
+len_kb  <- len_map / 1000
+
+# ===== 计算 TPM / FPKM =====
+# RPK = counts / length_kb
+rpk <- sweep(cts, 1, len_kb, "/")
+# 每列 sum(RPK)
+sum_rpk <- colSums(rpk, na.rm=TRUE)
+
+tpm  <- sweep(rpk, 2, sum_rpk, "/") * 1e6
+
+lib_m <- colSums(cts, na.rm=TRUE) / 1e6
+fpkm <- sweep(sweep(cts, 1, len_kb, "/"), 2, lib_m, "/")
+
+# 转成 data.table，加列名前缀
+tpm_dt <- as.data.table(tpm, keep.rownames = "Gene_raw")
+setnames(tpm_dt, old = setdiff(names(tpm_dt), "Gene_raw"), new = paste0("TPM_", setdiff(names(tpm_dt), "Gene_raw")))
+
+fpkm_dt <- as.data.table(fpkm, keep.rownames = "Gene_raw")
+setnames(fpkm_dt, old = setdiff(names(fpkm_dt), "Gene_raw"), new = paste0("FPKM_", setdiff(names(fpkm_dt), "Gene_raw")))
+
+len_out <- data.table(Gene = gene_raw, Gene_clean = gene_clean, exon_len_bp = len_map)
+
+# ===== 合并到现有总表 =====
+expr <- fread(in_expr_csv)
+
+# tpm_dt/fpkm_dt 用的是 Gene_raw（dds的原始ID），与 expr$Gene 对齐
+expr2 <- merge(expr, len_out, by=c("Gene","Gene_clean"), all.x=TRUE, sort=FALSE)
+expr2 <- merge(expr2, tpm_dt,  by.x="Gene", by.y="Gene_raw", all.x=TRUE, sort=FALSE)
+expr2 <- merge(expr2, fpkm_dt, by.x="Gene", by.y="Gene_raw", all.x=TRUE, sort=FALSE)
+
+fwrite(expr2, out_expr_csv)
+message("Done: ", out_expr_csv)
+Rscript 07_add_TPM_FPKM_to_expr_table.R
