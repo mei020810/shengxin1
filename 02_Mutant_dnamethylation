@@ -1,0 +1,311 @@
+
+md5sum -c MD5.txt
+#原始数据位置：/mnt/nfs2/stu_fy/hms/Mutant_dnamethylation_data
+
+#文件名有中文，做英文软链接
+cd /data/mshe/Mutant_dnamethylationdata
+conda activate methylseq
+mkdir -p 01.RawLink
+
+ln -sf /mnt/nfs2/stu_fy/hms/Mutant_dnamethylation_data/01.RawData/156大1/156大1_1.fq.gz 01.RawLink/156_big_1_1.fq.gz
+ln -sf /mnt/nfs2/stu_fy/hms/Mutant_dnamethylation_data/01.RawData/156大1/156大1_2.fq.gz 01.RawLink/156_big_1_2.fq.gz
+ln -sf /mnt/nfs2/stu_fy/hms/Mutant_dnamethylation_data/01.RawData/156大2/156大2_1.fq.gz 01.RawLink/156_big_2_1.fq.gz
+ln -sf /mnt/nfs2/stu_fy/hms/Mutant_dnamethylation_data/01.RawData/156大2/156大2_2.fq.gz 01.RawLink/156_big_2_2.fq.gz
+ln -sf /mnt/nfs2/stu_fy/hms/Mutant_dnamethylation_data/01.RawData/156小1/156小1_1.fq.gz 01.RawLink/156_small_1_1.fq.gz
+ln -sf /mnt/nfs2/stu_fy/hms/Mutant_dnamethylation_data/01.RawData/156小1/156小1_2.fq.gz 01.RawLink/156_small_1_2.fq.gz
+ln -sf /mnt/nfs2/stu_fy/hms/Mutant_dnamethylation_data/01.RawData/156小2/156小2_1.fq.gz 01.RawLink/156_small_2_1.fq.gz
+ln -sf /mnt/nfs2/stu_fy/hms/Mutant_dnamethylation_data/01.RawData/156小2/156小2_2.fq.gz 01.RawLink/156_small_2_2.fq.gz
+ln -sf /mnt/nfs2/stu_fy/hms/Mutant_dnamethylation_data/01.RawData/W82-1/W82-1_1.fq.gz 01.RawLink/W82_1_1.fq.gz
+ln -sf /mnt/nfs2/stu_fy/hms/Mutant_dnamethylation_data/01.RawData/W82-1/W82-1_2.fq.gz 01.RawLink/W82_1_2.fq.gz
+ln -sf /mnt/nfs2/stu_fy/hms/Mutant_dnamethylation_data/01.RawData/W82-2/W82-2_1.fq.gz 01.RawLink/W82_2_1.fq.gz
+ln -sf /mnt/nfs2/stu_fy/hms/Mutant_dnamethylation_data/01.RawData/W82-2/W82-2_2.fq.gz 01.RawLink/W82_2_2.fq.gz
+
+#建立索引
+mkdir logs
+cat > 00_build_index.sh << 'EOF'
+#!/bin/bash
+set -euo pipefail
+THREADS=12
+REF=/mnt/nfs2/stu_fy/hms/RNAseq_Data/Gmax_508_Wm82/Gmax_508_v4.0.fa
+mkdir -p bismark_index
+# 复制参考文件
+cp -f "$REF" bismark_index/
+bismark_genome_preparation --parallel ${THREADS} ./bismark_index
+EOF
+
+chmod +x 00_build_index.sh
+nohup ./00_build_index.sh > logs/00_build_index.log 2>&1 &
+tail -f logs/00_build_index.log
+
+# trim_galore修剪数据
+cat > 01_trim.sh << 'EOF'
+#!/bin/bash
+set -euo pipefail
+mkdir -p trimmed_results
+echo "=== trimming start: $(date) ==="
+SAMPLES=(156_big_1 156_big_2 156_small_1 156_small_2 W82_1 W82_2)
+for s in "${SAMPLES[@]}"; do
+  echo ">>> trimming $s : $(date)"
+
+  trim_galore --paired --gzip -q 25 --stringency 5 --fastqc --length 35 -j 12 \
+    --output_dir ./trimmed_results \
+    01.RawLink/${s}_1.fq.gz 01.RawLink/${s}_2.fq.gz
+  echo ">>> done $s"
+  echo
+done
+
+echo "=== trimming done: $(date) ==="
+ls -lh trimmed_results | head
+EOF
+
+chmod +x 01_trim.sh
+nohup ./01_trim.sh > logs/01_trim.log 2>&1 &
+tail -f logs/01_trim.log
+
+cat > 02_align_dedup.sh <<'EOF'
+#!/bin/bash
+set -euo pipefail
+THREADS=12
+GENOME="./bismark_index"
+OUTDIR="02.align"
+mkdir -p "$OUTDIR"
+SAMPLES=(156_big_1 156_big_2 156_small_1 156_small_2 W82_1 W82_2)
+
+for s in "${SAMPLES[@]}"; do
+  echo "=== $s align+dedup: $(date) ==="
+  mkdir -p "$OUTDIR/$s"
+  R1=$(ls -1 trimmed_results/${s}_*_val_1.fq.gz | head -n 1)
+  R2=$(ls -1 trimmed_results/${s}_*_val_2.fq.gz | head -n 1)
+  echo "R1=$R1"
+  echo "R2=$R2"
+
+  bismark \
+    --parallel ${THREADS} \
+    --output_dir "$OUTDIR/$s" \
+    --gzip \
+    --nucleotide_coverage \
+    "$GENOME" \
+    -1 "$R1" -2 "$R2" \
+    2> "logs/${s}.bismark.log"
+
+  # 去重
+  deduplicate_bismark \
+    --paired --bam \
+    "$OUTDIR/$s/"*_bismark_bt2_pe.bam \
+    --output_dir "$OUTDIR/$s" \
+    2> "logs/${s}.dedup.log"
+
+  echo
+done
+EOF
+
+chmod +x 02_align_dedup.sh
+nohup ./02_align_dedup.sh > logs/02_align_dedup.nohup.log 2>&1 &
+tail -f logs/02_align_dedup.nohup.log
+
+#比对完之后看报告
+grep -H "Mapping efficiency" 02.align/*/*_PE_report.txt
+grep -H "Total number duplicated alignments removed" 02.align/*/*deduplication_report.txt
+grep -H "Total number of alignments analysed" 02.align/*/*deduplication_report.txt
+
+#甲基化提取
+cat > 03_extract_report.sh <<'EOF'
+#!/bin/bash
+set -euo pipefail
+THREADS=12
+GENOME="./bismark_index"
+ALIGNDIR="02.align"
+OUTLOG="logs"
+mkdir -p "$OUTLOG"
+
+SAMPLES=(156_big_1 156_big_2 156_small_1 156_small_2 W82_1 W82_2)
+
+BUFFER_SIZE="50G"
+COV_THRESHOLD=3
+
+for s in "${SAMPLES[@]}"; do
+  echo "=== $s methylation extractor: $(date) ==="
+
+  DEDUP_BAM=$(ls -1 ${ALIGNDIR}/${s}/*deduplicated.bam | head -n 1)
+
+#  双端测序、忽略read1和read2的前2个碱基、内存缓冲区大小为50G、只分析CX上下文（CG/CHG/CHH，H=A/T/C，植物甲基化分析核心参数）、过滤覆盖度＜3的位点、生成全面的甲基化报告、生成bedGraph格式文件，并压缩为.gz格式、指定并行线程数、指定基因组索引目录
+  bismark_methylation_extractor \
+    --paired-end \
+    --ignore 2 --ignore_r2 2 \
+    --buffer_size "${BUFFER_SIZE}" \
+    --CX_context \
+    --cutoff "${COV_THRESHOLD}" \
+    --comprehensive \
+    --bedGraph --gzip \
+    --parallel "${THREADS}" \
+    --genome_folder "${GENOME}" \
+    --output "${ALIGNDIR}/${s}" \
+    "${DEDUP_BAM}" \
+    2> "${OUTLOG}/${s}.extractor.log"
+
+  # 可选：生成 CX 报告（DSS/统计常用）
+  COVGZ=$(ls -1 ${ALIGNDIR}/${s}/*.bismark.cov.gz | head -n 1)
+  coverage2cytosine \
+    "${COVGZ}" \
+    --dir "${ALIGNDIR}/${s}" \
+    --CX_context \
+    -o "${s}" \
+    --genome_folder "${GENOME}" \
+    --coverage_threshold "${COV_THRESHOLD}" \
+    2> "${OUTLOG}/${s}.coverage2cytosine.log"
+
+  echo
+done
+EOF
+
+chmod +x 03_extract_report.sh
+nohup ./03_extract_report.sh > logs/03_extract_report.nohup.log 2>&1 &
+tail -f logs/03_extract_report.nohup.log
+
+# W82_2的CpG、CHG、CHH的context已经生成，但bismark2bedGraph阶段失败了，需要用context文件重跑
+nohup bash -lc '
+cd /data/mshe/Mutant_dnamethylationdata/02.align/W82_2
+export TMPDIR=/data/mshe/Mutant_dnamethylationdata/tmp_sort
+mkdir -p "$TMPDIR"
+bismark2bedGraph --CX --scaffolds --buffer_size 100G \
+  CpG_context_W82_2_1_val_1_bismark_bt2_pe.deduplicated.txt.gz
+coverage2cytosine \
+  W82_2_1_val_1_bismark_bt2_pe.deduplicated.bismark.cov.gz \
+  --dir . --CX_context -o W82_2 \
+  --genome_folder ../../bismark_index \
+  --coverage_threshold 3
+' > /data/mshe/Mutant_dnamethylationdata/logs/W82_2.bedgraph_rerun.nohup.log 2>&1 &
+
+#生成汇总报告
+cd /data/mshe/Mutant_dnamethylationdata
+mkdir -p QC/align
+cd QC/align
+bismark2summary -o Mutant_align ../../02.align/*/*_bismark_bt2_pe.bam
+
+cd /data/mshe/Mutant_dnamethylationdata
+mkdir -p QC
+cat > QC/make_qc_v4.sh <<'EOF'
+#!/bin/bash
+set -euo pipefail
+ALIGNDIR="02.align"
+OUT="QC/QC_summary_v4.tsv"
+
+printf "sample\tmapping_eff_pct\tdup_pct\talignments_analysed\tdedup_leftover\n" > "$OUT"
+
+# 提取 “: 后面的数字/百分比”，并去掉逗号、空格、TAB
+pct_after_colon () {
+  local pat="$1" file="$2"
+  perl -ne '
+    my $pat=shift;
+    if (/$pat/ && /:\s*([0-9.]+)%/) { print "$1\n"; exit }
+  ' "$pat" "$file" 2>/dev/null || true
+}
+
+pct_in_parens () {
+  local pat="$1" file="$2"
+  perl -ne '
+    my $pat=shift;
+    if (/$pat/ && /\(([0-9.]+)%\)/) { print "$1\n"; exit }
+  ' "$pat" "$file" 2>/dev/null || true
+}
+
+int_after_last_colon () {
+  local pat="$1" file="$2"
+  perl -ne '
+    my $pat=shift;
+    if (/$pat/ && /\:\s*([0-9][0-9,]*)\s*$/) { my $x=$1; $x=~s/,//g; print "$x\n"; exit }
+  ' "$pat" "$file" 2>/dev/null || true
+}
+
+leftover_count () {
+  local file="$1"
+  perl -ne '
+    if(/Total count of deduplicated leftover sequences:\s*([0-9][0-9,]*)/) {
+      my $x=$1; $x=~s/,//g; print "$x\n"; exit
+    }
+  ' "$file" 2>/dev/null || true
+}
+
+for sdir in ${ALIGNDIR}/*; do
+  [[ -d "$sdir" ]] || continue
+  s=$(basename "$sdir")
+
+  pe=$(ls -1 "$sdir"/*_PE_report.txt 2>/dev/null | head -n 1 || true)
+  dedup=$(ls -1 "$sdir"/*deduplication_report.txt 2>/dev/null | head -n 1 || true)
+
+  map="NA"
+  [[ -n "$pe" ]] && map=$(pct_after_colon "Mapping efficiency" "$pe")
+  [[ -z "$map" ]] && map="NA"
+
+  dup="NA"; analysed="NA"; left="NA"
+  if [[ -n "$dedup" ]]; then
+    dup=$(pct_in_parens "Total number duplicated alignments removed" "$dedup"); [[ -z "$dup" ]] && dup="NA"
+    analysed=$(int_after_last_colon "Total number of alignments analysed" "$dedup"); [[ -z "$analysed" ]] && analysed="NA"
+    left=$(leftover_count "$dedup"); [[ -z "$left" ]] && left="NA"
+  fi
+
+  printf "%s\t%s\t%s\t%s\t%s\n" "$s" "$map" "$dup" "$analysed" "$left" >> "$OUT"
+done
+
+echo "[OK] wrote $OUT"
+EOF
+
+bash QC/make_qc_v4.sh
+column -t -s $'\t' QC/QC_summary_v4.tsv
+
+for s in 02.align/*; do
+  r=$(ls -1 "$s"/*deduplicated_splitting_report.txt 2>/dev/null | head -n1) || continue
+  echo "=== $(basename "$s") ==="
+  grep -E "Total number of C's analysed:|C methylated in (CpG|CHG|CHH) context:|Total C to T conversions in (CpG|CHG|CHH) context:" "$r"
+  echo
+done
+
+
+cd /data/mshe/Mutant_dnamethylationdata
+mkdir -p QC
+cat > QC/make_meth_conv_ratio_safe.sh <<'EOF'
+#!/bin/bash
+set -euo pipefail
+
+OUT="QC/meth_conv_ratio_safe.tsv"
+printf "sample\tCs_analysed\tCpG_meth\tCpG_conv\tCpG_unmeth_pct\tCHG_meth\tCHG_conv\tCHG_unmeth_pct\tCHH_meth\tCHH_conv\tCHH_unmeth_pct\n" > "$OUT"
+
+for sdir in 02.align/*; do
+  [[ -d "$sdir" ]] || continue
+  sample=$(basename "$sdir")
+  rpt=$(ls -1 "$sdir"/*deduplicated_splitting_report.txt 2>/dev/null | head -n 1 || true)
+  [[ -n "$rpt" ]] || continue
+
+  awk -v s="$sample" -F': *' '
+    function clean(x){ gsub(/,/, "", x); gsub(/[ \t\r]/, "", x); return x }
+    function pct(u,m){
+      if ((u+m) > 0) return 100*u/(u+m);
+      else return -1;
+    }
+    /Total number of C\x27s analysed/                { Cs=clean($2)+0 }
+    /Total methylated C\x27s in CpG context/         { CpGm=clean($2)+0 }
+    /Total C to T conversions in CpG context/        { CpGu=clean($2)+0 }
+    /Total methylated C\x27s in CHG context/         { CHGm=clean($2)+0 }
+    /Total C to T conversions in CHG context/        { CHGu=clean($2)+0 }
+    /Total methylated C\x27s in CHH context/         { CHHm=clean($2)+0 }
+    /Total C to T conversions in CHH context/        { CHHu=clean($2)+0 }
+    END{
+      CpGun=pct(CpGu,CpGm); CHGun=pct(CHGu,CHGm); CHHun=pct(CHHu,CHHm);
+
+      printf "%s\t%d\t%d\t%d\t", s, Cs, CpGm, CpGu;
+      if (CpGun<0) printf "NA\t"; else printf "%.3f\t", CpGun;
+
+      printf "%d\t%d\t", CHGm, CHGu;
+      if (CHGun<0) printf "NA\t"; else printf "%.3f\t", CHGun;
+
+      printf "%d\t%d\t", CHHm, CHHu;
+      if (CHHun<0) printf "NA\n"; else printf "%.3f\n", CHHun;
+    }
+  ' "$rpt" >> "$OUT"
+done
+
+echo "[OK] wrote $OUT"
+EOF
+
+bash QC/make_meth_conv_ratio_safe.sh
+column -t -s $'\t' QC/meth_conv_ratio_safe.tsv
