@@ -1,0 +1,214 @@
+
+
+cd /data/mshe/Mutant_dnamethylationdata
+mkdir -p lambda_index logs
+cp -f /mnt/nfs2/stu_fy/mwj/WGBS_BSseq_2_flower/01.RawData/bismark_lamdaDNA/lambda_DNA.fa lambda_index/
+# 建索引
+bismark_genome_preparation --parallel 12 lambda_index > logs/00_lambda_index.log 2>&1
+# 比对+去重
+mkdir -p 03.lambda logs
+cat > 03_lambda_align_dedup.sh <<'EOF'
+#!/bin/bash
+set -euo pipefail
+THREADS=25
+LAMBDA_INDEX="/data/mshe/Mutant_dnamethylationdata/lambda_index"
+TRIMDIR="/data/mshe/Mutant_dnamethylationdata/trimmed_results"
+OUTBASE="/data/mshe/Mutant_dnamethylationdata/03.lambda"
+LOGDIR="/data/mshe/Mutant_dnamethylationdata/logs"
+mkdir -p "$OUTBASE" "$LOGDIR"
+
+SAMPLES=(156_big_1 156_big_2 156_small_1 156_small_2 W82_1 W82_2)
+
+for s in "${SAMPLES[@]}"; do
+  echo "=== lambda align+dedup: $s $(date) ==="
+  out="$OUTBASE/lambda_${s}"
+  mkdir -p "$out"
+
+  R1="${TRIMDIR}/${s}_1_val_1.fq.gz"
+  R2="${TRIMDIR}/${s}_2_val_2.fq.gz"
+
+  bismark \
+    --parallel ${THREADS} \
+    --output_dir "$out" \
+    --gzip \
+    "$LAMBDA_INDEX" \
+    -1 "$R1" -2 "$R2" \
+    2> "${LOGDIR}/${s}.lambda.bismark.log"
+
+  deduplicate_bismark \
+    --paired --bam \
+    "$out/"*_bismark_bt2_pe.bam \
+    --output_dir "$out" \
+    2> "${LOGDIR}/${s}.lambda.dedup.log"
+done
+EOF
+
+chmod +x 03_lambda_align_dedup.sh
+nohup ./03_lambda_align_dedup.sh > logs/03_lambda_align_dedup.nohup.log 2>&1 &
+tail -f logs/03_lambda_align_dedup.nohup.log
+
+
+cat > 04_lambda_extract_report.sh <<'EOF'
+#!/bin/bash
+set -euo pipefail
+THREADS=25
+BUFFER_SIZE="50G"
+COV_THRESHOLD=1
+LAMBDA_INDEX="/data/mshe/Mutant_dnamethylationdata/lambda_index"
+OUTBASE="/data/mshe/Mutant_dnamethylationdata/03.lambda"
+LOGDIR="/data/mshe/Mutant_dnamethylationdata/logs"
+mkdir -p "$LOGDIR"
+
+SAMPLES=(156_big_1 156_big_2 156_small_1 156_small_2 W82_1 W82_2)
+EXTRACT_CORE_OPT="--multicore"
+for s in "${SAMPLES[@]}"; do
+  echo "=== lambda extractor+report: $s $(date) ==="
+  out="$OUTBASE/lambda_${s}"
+
+  BAM=$(ls -1 "$out"/*deduplicated.bam | head -n 1)
+
+  bismark_methylation_extractor \
+    --paired-end \
+    --ignore 2 --ignore_r2 2 \
+    --buffer_size "$BUFFER_SIZE" \
+    --CX_context \
+    --cutoff "$COV_THRESHOLD" \
+    --comprehensive \
+    --bedGraph --gzip \
+    $EXTRACT_CORE_OPT "$THREADS" \
+    --genome_folder "$LAMBDA_INDEX" \
+    --output "$out" \
+    "$BAM" \
+    2> "${LOGDIR}/${s}.lambda.extractor.log"
+
+  COV=$(ls -1 "$out"/*.bismark.cov.gz | head -n 1)
+
+  coverage2cytosine \
+    "$COV" \
+    --dir "$out" \
+    --CX_context \
+    -o "${s}" \
+    --genome_folder "$LAMBDA_INDEX" \
+    --coverage_threshold "$COV_THRESHOLD" \
+    2> "${LOGDIR}/${s}.lambda.coverage2cytosine.log"
+
+  # 转化率：未甲基化reads / (甲基化reads+未甲基化reads) × 100%
+  echo -n "${s} lambda conversion rate: "
+  zcat "$COV" | awk '{meth+=$5; unmeth+=$6} END{ if(meth+unmeth>0) printf "%.3f%%\n", unmeth/(meth+unmeth)*100; else print "NA" }'
+done
+EOF
+
+chmod +x 04_lambda_extract_report.sh
+nohup ./04_lambda_extract_report.sh > logs/04_lambda_extract_report.nohup.log 2>&1 &
+tail -f logs/04_lambda_extract_report.nohup.log
+
+head -n 20 03.lambda/lambda_156_small_1/156_small_1_1_val_1_bismark_bt2_PE_report.txt
+# lamda DNA的比对率为零，换成叶绿体DNA来看转化率
+mkdir -p Gmax_chloroplast
+curl -L "https://www.ncbi.nlm.nih.gov/search/api/download-sequence/?db=nuccore&id=NC_007942.1" \
+  -o Gmax_chloroplast/Gmax_chloroplast_NC_007942.1.fa
+
+mkdir -p chloroplast_index 03.chloroplast
+cp Gmax_chloroplast/Gmax_chloroplast_NC_007942.1.fa chloroplast_index/
+bismark_genome_preparation --parallel 12 chloroplast_index
+
+bismark --parallel 8 --gzip --output_dir 03.chloroplast/156_big_1 chloroplast_index \
+  -1 trimmed_results/156_big_1_1_val_1.fq.gz -2 trimmed_results/156_big_1_2_val_2.fq.gz
+
+deduplicate_bismark --paired --bam 03.chloroplast/156_big_1/*_bismark_bt2_pe.bam --output_dir 03.chloroplast/156_big_1 
+
+bismark_methylation_extractor --paired-end --gzip --bedGraph --comprehensive \
+  --genome_folder chloroplast_index 03.chloroplast/156_big_1/*deduplicated.bam
+
+# 比对+去重+提取+报告
+cat > 03_chloroplast_align_dedup_extract_report.sh <<'EOF'
+#!/bin/bash
+set -euo pipefail
+ALIGN_THREADS=4
+EXTRACT_THREADS=4
+BUFFER_SIZE="20G"
+COV_THRESHOLD=1
+CHLO_INDEX="/data/mshe/Mutant_dnamethylationdata/chloroplast_index"
+TRIMDIR="/data/mshe/Mutant_dnamethylationdata/trimmed_results"
+OUTBASE="/data/mshe/Mutant_dnamethylationdata/03.chloroplast"
+LOGDIR="/data/mshe/Mutant_dnamethylationdata/logs"
+mkdir -p "$OUTBASE" "$LOGDIR"
+
+SAMPLES=(156_big_1 156_big_2 156_small_1 156_small_2 W82_1 W82_2)
+
+EXTRACT_CORE_OPT="--multicore"
+if ! bismark_methylation_extractor --help 2>&1 | grep -q -- '--multicore'; then
+  EXTRACT_CORE_OPT="--parallel"
+fi
+
+# 1) 先完成所有样本的比对 + 去重
+for s in "${SAMPLES[@]}"; do
+  echo "=== chloroplast align+dedup: $s $(date) ==="
+  out="$OUTBASE/${s}"
+  mkdir -p "$out"
+
+  R1="${TRIMDIR}/${s}_1_val_1.fq.gz"
+  R2="${TRIMDIR}/${s}_2_val_2.fq.gz"
+
+  bismark \
+    --parallel ${ALIGN_THREADS} \
+    --output_dir "$out" \
+    --gzip \
+    "$CHLO_INDEX" \
+    -1 "$R1" -2 "$R2" \
+    2> "${LOGDIR}/${s}.chloroplast.bismark.log"
+
+  deduplicate_bismark \
+    --paired --bam \
+    "$out/"*_bismark_bt2_pe.bam \
+    --output_dir "$out" \
+    2> "${LOGDIR}/${s}.chloroplast.dedup.log"
+done
+
+if ls "$out"/*deduplicated.bam >/dev/null 2>&1; then
+  echo "[SKIP] $s deduplicated bam already exists"
+  continue
+fi
+
+# 2) 再完成所有样本的提取 + CX report
+for s in "${SAMPLES[@]}"; do
+  echo "=== chloroplast extractor+report: $s $(date) ==="
+  out="$OUTBASE/${s}"
+
+  BAM=$(ls -1 "$out"/*deduplicated.bam | head -n 1)
+
+  bismark_methylation_extractor \
+    --paired-end \
+    --ignore 2 --ignore_r2 2 \
+    --buffer_size "$BUFFER_SIZE" \
+    --CX_context \
+    --cutoff "$COV_THRESHOLD" \
+    --comprehensive \
+    --bedGraph --gzip \
+    $EXTRACT_CORE_OPT "$EXTRACT_THREADS" \
+    --genome_folder "$CHLO_INDEX" \
+    --output "$out" \
+    "$BAM" \
+    2> "${LOGDIR}/${s}.chloroplast.extractor.log"
+
+  COV=$(ls -1 "$out"/*.bismark.cov.gz | head -n 1)
+
+  coverage2cytosine \
+    "$COV" \
+    --dir "$out" \
+    --CX_context \
+    -o "${s}" \
+    --genome_folder "$CHLO_INDEX" \
+    --coverage_threshold "$COV_THRESHOLD" \
+    2> "${LOGDIR}/${s}.chloroplast.coverage2cytosine.log"
+
+  echo -n "${s} chloroplast conversion rate: "
+  zcat "$COV" | awk '{meth+=$5; unmeth+=$6} END{ if(meth+unmeth>0) printf "%.3f%%\n", unmeth/(meth+unmeth)*100; else print "NA" }'
+done
+EOF
+
+chmod +x 03_chloroplast_align_dedup_extract_report.sh
+nohup ./03_chloroplast_align_dedup_extract_report.sh > logs/03_chloroplast_align_dedup_extract_report.nohup.log 2>&1 &
+tail -f logs/03_chloroplast_align_dedup_extract_report.nohup.log
+
+
