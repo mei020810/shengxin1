@@ -982,3 +982,24 @@ expr2 <- merge(expr2, fpkm_dt, by.x="Gene", by.y="Gene_raw", all.x=TRUE, sort=FA
 fwrite(expr2, out_expr_csv)
 message("Done: ", out_expr_csv)
 Rscript 07_add_TPM_FPKM_to_expr_table.R
+
+## 生成abundance文件（（作废））
+conda activate rnaseq
+cd /data/mshe/Mutant_rnadata
+mkdir -p stringtie/abund stringtie/gtf stringtie/logs
+GTF="/mnt/nfs2/stu_fy/hms/RNAseq_Data/Gmax_508_Wm82/Gmax_508_Wm82.a4.v1.gene.gtf"
+THREADS=40
+
+for s in Wm82_big_1 Wm82_big_2 M156_big_1 M156_big_2 M156_small_1 M156_small_2; do
+  echo "[INFO] stringtie quant: $s"
+  stringtie "bam/${s}.sorted.bam" \
+    -G "$GTF" \
+    -e \
+    -A "stringtie/abund/${s}.gene_abund.tab" \
+    -o "stringtie/gtf/${s}.gtf" \
+    -p $THREADS \
+    2> "stringtie/logs/${s}.stringtie.log"
+done
+##
+
+
