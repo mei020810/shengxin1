@@ -1,0 +1,68 @@
+##暂定代表属：Cercis、Zenia、Eperua、Acacia、Senna、Chamaecrista、Sophora、Lupinus、Arachis、Dalbergia、Medicago、Cicer、Vicia、Lotus、Trifolium、Glycine、Phaseolus、Vigna、Cajanus、Lablab
+
+#去重
+awk -F'\t' 'BEGIN{OFS=FS}
+NR==FNR {
+    if (FNR>1) seen[$2]=1
+    next
+}
+FNR==1 {print; next}
+{
+    acc=$2
+    pair=$3
+    if (acc ~ /^GCF_/ && pair != "" && pair in seen) next
+    print
+}' ncbi_fabaseae.tsv ncbi_fabaseae.tsv > dedup_ncbi_fabaseae.tsv
+
+echo "原始数据行数："
+awk 'END{print NR-1}' ncbi_fabaseae.tsv
+echo "去重后数据行数："
+awk 'END{print NR-1}' dedup_ncbi_fabaseae.tsv
+
+#筛选目标物种
+awk -F'\t' 'BEGIN{OFS=FS}
+NR==FNR {
+    gsub(/\r/, "", $0)
+    target[$0]=1
+    next
+}
+FNR==1 {print; next}
+{
+    name=$4
+    gsub(/\r/, "", name)
+    if (name in target) print
+}' target_assembly.txt dedup_ncbi_fabaseae.tsv > chosen_species_candidates.tsv
+awk -F'\t' 'NR>1{count[$4]++} END{for (k in count) print k "\t" count[k]}' chosen_species_candidates.tsv | sort
+
+#安装ncbi官方工具
+mkdir -p genome_file
+conda activate rnaseq
+mamba install -c conda-forge ncbi-datasets-cli
+datasets version
+dataformat --version
+
+#下载选中的物种基因组后解压
+unzip Cercis_chuniana_GCA_051020845.1.zip -d Cercis_chuniana_GCA_051020845.1
+unzip Zenia_insignis_GCA_052059195.1.zip -d Zenia_insignis_GCA_052059195.1
+unzip Eperua_bijuga_GCA_055187755.1.zip -d Eperua_bijuga_GCA_055187755.1
+unzip Acacia_melanoxylon_GCA_048487655.1.zip -d Acacia_melanoxylon_GCA_048487655.1
+unzip Senna_tora_GCA_014851425.1.zip -d Senna_tora_GCA_014851425.1
+unzip Chamaecrista_fasciculata_GCA_003254925.1.zip -d Chamaecrista_fasciculata_GCA_003254925.1
+unzip Sophora_flavescens_GCA_030762895.1.zip -d Sophora_flavescens_GCA_030762895.1
+
+
+# Rloop预测
+conda activate deepRloopPre
+mkdir RloopPre
+deepRloopPredict.py \
+  --h5 /home/mshe/deepRloop_models/transfer_scale128_single_13_0.29202.hdf5 \
+  --fasta /data/mshe/deepRloopPro_data/genome_file/Cercis_chuniana_GCA_051020845.1/ncbi_dataset/data/GCA_051020845.1/GCA_051020845.1_ASM5102084v1_genomic.fna \
+  --prefix Cercis_chuniana
+deepRloopPredict.py \
+  --h5 /home/mshe/deepRloop_models/transfer_scale128_single_13_0.29202.hdf5 \
+  --fasta /data/mshe/deepRloopPro_data/genome_file/Zenia_insignis_GCA_052059195.1/ncbi_dataset/data/GCA_052059195.1/GCA_052059195.1_KIB_Zeins_1.0_genomic.fna \
+  --prefix Zenia_insignis
+deepRloopPredict.py \
+  --h5 /home/mshe/deepRloop_models/transfer_scale128_single_13_0.29202.hdf5 \
+  --fasta /data/mshe/deepRloopPro_data/genome_file/Eperua_bijuga_GCA_055187755.1/ncbi_dataset/data/GCA_055187755.1/GCA_055187755.1_ASM5518775v1_genomic.fna \
+  --prefix Eperua_bijuga
