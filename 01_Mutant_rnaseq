@@ -1,4 +1,4 @@
-#从诺禾云盘下载数据：1.下载客户端  wget https://data-deliver.novogene.com/linuxnd.zip 2.解压软件  unzip linuxnd.zip 3.  ./linuxnd/lnd login -u 用户名 -p 密码 4.查看目录  linuxnd/lnd list 5.数据下载  linuxnd/lnd cp -d oss：//目录名 本地目录
+#从诺禾云盘下载数据：1.下载客户端  wget https://data-deliver.novogene.com/linuxnd.zip 2.解压软件  unzip linuxnd.zip 3.  ./linuxnd/lnd login -u 用户名 -p 密码 4.查看目录  ./linuxnd/lnd list 5.数据下载  ./linuxnd/lnd cp -d oss：//目录名 本地目录
 md5sum -c MD5.txt #检查数据
 #该数据有6个样本：W82大1、W82大2、156大1-156大10、156大3-156大9-156大5、156小1、156小2 后面对应Wm82_big_1、Wm82_big_2、M156_big_1、M156_big_2、M156_small_1、M156_small_2
 #原始数据位置：/mnt/nfs2/stu_fy/hms/Mutant_rnaseq_data
